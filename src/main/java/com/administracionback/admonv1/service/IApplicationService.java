@@ -8,7 +8,7 @@ public interface IApplicationService {
             ApplicationRequestDTO request
     );
 
-    ResponseEntity<ApiResponse<ApplicationResponseDTO>> getApplication(
+    ResponseEntity<ApiResponse<ApplicationDetailResponseDTO>> getApplication(
             Long applicationId
     );
 

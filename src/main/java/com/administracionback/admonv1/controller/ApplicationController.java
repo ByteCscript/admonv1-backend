@@ -21,7 +21,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/{applicationId}")
-    public ResponseEntity<ApiResponse<ApplicationResponseDTO>> getApplication(
+    public ResponseEntity<ApiResponse<ApplicationDetailResponseDTO>> getApplication(
             @PathVariable Long applicationId) {
 
         return applicationService.getApplication(applicationId);

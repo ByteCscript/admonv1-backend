@@ -3,10 +3,9 @@ package com.administracionback.admonv1.service;
 import com.administracionback.admonv1.dto.*;
 import com.administracionback.admonv1.model.Application;
 import com.administracionback.admonv1.model.ApplicationStatus;
-import com.administracionback.admonv1.repository.ApplicationRepository;
-import com.administracionback.admonv1.repository.ApplicationSpecification;
-import com.administracionback.admonv1.repository.CallRepository;
-import com.administracionback.admonv1.repository.ResidentRepository;
+import com.administracionback.admonv1.model.Document;
+import com.administracionback.admonv1.repository.*;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -16,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -25,8 +26,10 @@ public class ApplicationServiceImpl implements IApplicationService {
     private final ApplicationRepository applicationRepository;
     private final CallRepository callRepository;
     private final ResidentRepository residentRepository;
+    private final DocumentRepository documentRepository;
 
     @Override
+    @Transactional
     public ResponseEntity<ApiResponse<ApplicationResponseDTO>> createApplication(
             ApplicationRequestDTO request) {
 
@@ -93,6 +96,27 @@ public class ApplicationServiceImpl implements IApplicationService {
 
         Application application = new Application();
 
+        List<Document> documents = new ArrayList<>();
+
+        if (request.documentIds() != null
+                && !request.documentIds().isEmpty()) {
+
+            documents = documentRepository.findAllById(
+                    request.documentIds()
+            );
+
+            if (documents.size() != request.documentIds().size()) {
+
+                return ResponseEntity.badRequest().body(
+                        new ApiResponse<>(
+                                "Uno o más documentos no existen",
+                                null,
+                                "DOCUMENT_NOT_FOUND"
+                        )
+                );
+            }
+        }
+
         application.setApplicationNumber(
                 "POST-" + UUID.randomUUID()
         );
@@ -103,9 +127,15 @@ public class ApplicationServiceImpl implements IApplicationService {
         application.setStatus(ApplicationStatus.REGISTERED);
         application.setCreatedAt(LocalDateTime.now());
 
-
         Application savedApplication =
                 applicationRepository.save(application);
+
+        documents.forEach(document ->
+                document.setApplication(application)
+        );
+
+        documentRepository.saveAll(documents);
+
 
         return ResponseEntity.ok(
                 new ApiResponse<>(
@@ -117,7 +147,7 @@ public class ApplicationServiceImpl implements IApplicationService {
     }
 
     @Override
-    public ResponseEntity<ApiResponse<ApplicationResponseDTO>> getApplication(
+    public ResponseEntity<ApiResponse<ApplicationDetailResponseDTO>> getApplication(
             Long applicationId) {
 
         var application = applicationRepository.findById(applicationId);
@@ -133,7 +163,7 @@ public class ApplicationServiceImpl implements IApplicationService {
         return ResponseEntity.ok(
                 new ApiResponse<>(
                         "Postulación consultada correctamente",
-                        mapToDTO(entity),
+                        mapToDetailDTO(entity),
                         null
                 )
         );
@@ -208,4 +238,47 @@ public class ApplicationServiceImpl implements IApplicationService {
                 application.getCreatedAt()
         );
     }
+
+    private ApplicationDetailResponseDTO mapToDetailDTO(
+            Application application
+    ) {
+
+        return new ApplicationDetailResponseDTO(
+                application.getId(),
+                application.getApplicationNumber(),
+
+                application.getResident().getId(),
+                application.getResident().getName(),
+
+                application.getApartment().getId(),
+                application.getApartment().getNumber(),
+
+                application.getCall().getId(),
+                application.getCall().getTitle(),
+
+                application.getStatus().name(),
+                application.getCreatedAt(),
+
+                application.getDocuments()
+                        .stream()
+                        .map(this::mapDocumentToDTO)
+                        .toList()
+        );
+    }
+
+    private DocumentResponseDTO mapDocumentToDTO(
+            Document document
+    ) {
+
+        return new DocumentResponseDTO(
+                document.getId(),
+                document.getOriginalName(),
+                document.getContentType(),
+                document.getSize(),
+                document.getS3Key(),
+                document.getCreatedAt(),
+                document.getUploadedAt()
+        );
+    }
+
 }

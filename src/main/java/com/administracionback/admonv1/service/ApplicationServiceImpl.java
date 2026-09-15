@@ -25,15 +25,15 @@ public class ApplicationServiceImpl implements IApplicationService {
 
     private final ApplicationRepository applicationRepository;
     private final CallRepository callRepository;
-    private final ResidentRepository residentRepository;
+    private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
 
     @Override
     @Transactional
     public ResponseEntity<ApiResponse<ApplicationResponseDTO>> createApplication(
-            ApplicationRequestDTO request) {
+            ApplicationRequestDTO request, String email) {
 
-        if (request.callId() == null || request.residentId() == null) {
+        if (request.callId() == null || email == null) {
 
             return ResponseEntity.badRequest().body(
                     new ApiResponse<>(
@@ -51,7 +51,7 @@ public class ApplicationServiceImpl implements IApplicationService {
             return ResponseEntity.notFound().build();
         }
 
-        var resident = residentRepository.findById(request.residentId());
+        var resident = userRepository.findByEmail(email);
 
         if (resident.isEmpty()) {
 
@@ -233,6 +233,9 @@ public class ApplicationServiceImpl implements IApplicationService {
 
                 application.getCall().getId(),
                 application.getCall().getTitle(),
+
+                application.getApartment().getTower().getId(),
+                application.getApartment().getTower().getName(),
 
                 application.getStatus().name(),
                 application.getCreatedAt()

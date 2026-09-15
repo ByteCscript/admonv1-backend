@@ -5,7 +5,6 @@ import java.util.UUID;
 
 public record ApplicationRequestDTO(
         Long callId,
-        Long residentId,
         List<UUID> documentIds
 )  {
 }

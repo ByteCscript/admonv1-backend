@@ -5,7 +5,8 @@ import org.springframework.http.ResponseEntity;
 
 public interface IApplicationService {
     ResponseEntity<ApiResponse<ApplicationResponseDTO>> createApplication(
-            ApplicationRequestDTO request
+            ApplicationRequestDTO request,
+            String email
     );
 
     ResponseEntity<ApiResponse<ApplicationDetailResponseDTO>> getApplication(

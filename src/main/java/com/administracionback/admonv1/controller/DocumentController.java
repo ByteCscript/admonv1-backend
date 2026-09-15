@@ -5,6 +5,7 @@ import com.administracionback.admonv1.dto.DocumentPresignedRequestDTO;
 import com.administracionback.admonv1.dto.DocumentPresignedResponseDTO;
 import com.administracionback.admonv1.dto.DocumentResponseDTO;
 import com.administracionback.admonv1.service.IDocumentService;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +15,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/documents")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearerAuth")
 public class DocumentController {
 
     private final IDocumentService documentService;

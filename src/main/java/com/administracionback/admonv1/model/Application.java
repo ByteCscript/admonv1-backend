@@ -30,7 +30,7 @@ public class Application {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "resident_id", nullable = false)
-    private Resident resident;
+    private User resident;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "apartment_id", nullable = false)

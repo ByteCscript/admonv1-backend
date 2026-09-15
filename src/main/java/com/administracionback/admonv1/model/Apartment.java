@@ -18,4 +18,8 @@ public class Apartment {
 
     @Column(nullable = false)
     private boolean enabled;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tower_id", nullable = false)
+    private Tower tower;
 }

@@ -3,6 +3,7 @@ package com.administracionback.admonv1.controller;
 import com.administracionback.admonv1.dto.ApiResponse;
 import com.administracionback.admonv1.dto.CallDTO;
 import com.administracionback.admonv1.service.ICallService;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +17,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/calls")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearerAuth")
 public class CallController {
 
 

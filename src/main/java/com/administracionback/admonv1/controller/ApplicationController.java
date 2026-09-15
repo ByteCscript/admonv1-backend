@@ -2,6 +2,7 @@ package com.administracionback.admonv1.controller;
 
 import com.administracionback.admonv1.dto.*;
 import com.administracionback.admonv1.service.IApplicationService;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/applications")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearerAuth")
 public class ApplicationController {
 
     private final IApplicationService applicationService;

@@ -11,6 +11,8 @@ public record ApplicationResponseDTO(
         String apartmentNumber,
         Long callId,
         String callTitle,
+        Long towerId,
+        String towerName,
         String status,
         LocalDateTime createdAt
 ) {

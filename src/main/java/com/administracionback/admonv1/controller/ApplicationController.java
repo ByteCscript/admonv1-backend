@@ -4,6 +4,7 @@ import com.administracionback.admonv1.dto.*;
 import com.administracionback.admonv1.service.IApplicationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,9 +16,10 @@ public class ApplicationController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<ApplicationResponseDTO>> createApplication(
-            @RequestBody ApplicationRequestDTO request) {
+            @RequestBody ApplicationRequestDTO request, Authentication authentication) {
 
-        return applicationService.createApplication(request);
+        String email = authentication.getName();
+        return applicationService.createApplication(request, email);
     }
 
     @GetMapping("/{applicationId}")

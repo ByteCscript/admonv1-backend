@@ -4,8 +4,10 @@ import com.administracionback.admonv1.dto.ApiResponse;
 import com.administracionback.admonv1.dto.DocumentPresignedRequestDTO;
 import com.administracionback.admonv1.dto.DocumentPresignedResponseDTO;
 import com.administracionback.admonv1.dto.DocumentResponseDTO;
+import com.administracionback.admonv1.dto.DocumentTypeResponseDTO;
 import com.administracionback.admonv1.model.Document;
 import com.administracionback.admonv1.model.DocumentStatus;
+import com.administracionback.admonv1.model.DocumentType;
 import com.administracionback.admonv1.repository.DocumentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +24,8 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -43,6 +47,47 @@ public class DocumentServiceImpl implements IDocumentService {
     public ResponseEntity<ApiResponse<DocumentPresignedResponseDTO>> generatePresignedUrl(DocumentPresignedRequestDTO request) {
         {
 
+            DocumentType type;
+
+            try {
+
+                type = DocumentType.valueOf(request.documentType());
+
+            } catch (IllegalArgumentException | NullPointerException e) {
+
+                return ResponseEntity.badRequest().body(
+                        new ApiResponse<>(
+                                "Tipo de documento no válido",
+                                null,
+                                "INVALID_DOCUMENT_TYPE"
+                        )
+                );
+            }
+
+            if (request.contentType() == null
+                    || !request.contentType().equals(type.getAcceptedContentType())) {
+
+                return ResponseEntity.badRequest().body(
+                        new ApiResponse<>(
+                                "Solo se permiten archivos en formato PDF",
+                                null,
+                                "INVALID_CONTENT_TYPE"
+                        )
+                );
+            }
+
+            if (request.size() == null
+                    || request.size() > type.getMaxSizeBytes()) {
+
+                return ResponseEntity.badRequest().body(
+                        new ApiResponse<>(
+                                "El archivo excede el tamaño máximo permitido de 2MB",
+                                null,
+                                "FILE_TOO_LARGE"
+                        )
+                );
+            }
+
             UUID documentId = UUID.randomUUID();
 
             String key = "documents/"
@@ -61,6 +106,7 @@ public class DocumentServiceImpl implements IDocumentService {
             document.setBucket(bucketName);
             document.setCreatedAt(LocalDateTime.now());
             document.setStatus(DocumentStatus.PENDING);
+            document.setDocumentType(type);
 
             documentRepository.save(document);
 
@@ -144,7 +190,13 @@ public class DocumentServiceImpl implements IDocumentService {
                             document.getSize(),
                             document.getS3Key(),
                             document.getCreatedAt(),
-                            document.getUploadedAt()
+                            document.getUploadedAt(),
+                            document.getDocumentType() != null
+                                    ? document.getDocumentType().name()
+                                    : null,
+                            document.getDocumentType() != null
+                                    ? document.getDocumentType().getLabel()
+                                    : null
                     );
 
             return ResponseEntity.ok(
@@ -165,6 +217,30 @@ public class DocumentServiceImpl implements IDocumentService {
                     )
             );
         }
+    }
+
+    @Override
+    public ResponseEntity<ApiResponse<List<DocumentTypeResponseDTO>>> getDocumentTypes() {
+
+        List<DocumentTypeResponseDTO> types =
+                Arrays.stream(DocumentType.values())
+                        .map(type -> new DocumentTypeResponseDTO(
+                                type.name(),
+                                type.getLabel(),
+                                type.isRequired(),
+                                type.getPurpose(),
+                                type.getMaxSizeBytes(),
+                                type.getAcceptedContentType()
+                        ))
+                        .toList();
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        "Catálogo de tipos de documento consultado correctamente",
+                        types,
+                        null
+                )
+        );
     }
 
 }

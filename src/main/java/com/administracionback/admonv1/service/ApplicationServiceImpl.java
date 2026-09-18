@@ -4,6 +4,8 @@ import com.administracionback.admonv1.dto.*;
 import com.administracionback.admonv1.model.Application;
 import com.administracionback.admonv1.model.ApplicationStatus;
 import com.administracionback.admonv1.model.Document;
+import com.administracionback.admonv1.model.DocumentStatus;
+import com.administracionback.admonv1.model.DocumentType;
 import com.administracionback.admonv1.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -16,8 +18,11 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -115,6 +120,44 @@ public class ApplicationServiceImpl implements IApplicationService {
                         )
                 );
             }
+        }
+
+        boolean anyNotUploaded = documents.stream()
+                .anyMatch(document ->
+                        document.getStatus() != DocumentStatus.UPLOADED
+                );
+
+        if (anyNotUploaded) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "Uno o más documentos no han finalizado su carga",
+                            null,
+                            "DOCUMENT_NOT_UPLOADED"
+                    )
+            );
+        }
+
+        Set<DocumentType> providedTypes = documents.stream()
+                .map(Document::getDocumentType)
+                .collect(Collectors.toSet());
+
+        List<String> missingRequired = Arrays.stream(DocumentType.values())
+                .filter(DocumentType::isRequired)
+                .filter(type -> !providedTypes.contains(type))
+                .map(DocumentType::getLabel)
+                .toList();
+
+        if (!missingRequired.isEmpty()) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "Faltan documentos obligatorios: "
+                                    + String.join(", ", missingRequired),
+                            null,
+                            "REQUIRED_DOCUMENTS_MISSING"
+                    )
+            );
         }
 
         application.setApplicationNumber(
@@ -273,6 +316,8 @@ public class ApplicationServiceImpl implements IApplicationService {
             Document document
     ) {
 
+        DocumentType type = document.getDocumentType();
+
         return new DocumentResponseDTO(
                 document.getId(),
                 document.getOriginalName(),
@@ -280,7 +325,9 @@ public class ApplicationServiceImpl implements IApplicationService {
                 document.getSize(),
                 document.getS3Key(),
                 document.getCreatedAt(),
-                document.getUploadedAt()
+                document.getUploadedAt(),
+                type != null ? type.name() : null,
+                type != null ? type.getLabel() : null
         );
     }
 

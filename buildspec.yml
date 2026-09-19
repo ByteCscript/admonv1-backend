@@ -1,0 +1,39 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto21
+
+  pre_build:
+    commands:
+      - echo "Java version:"
+      - java -version
+      - echo "Maven version:"
+      - mvn -version
+
+  build:
+    commands:
+      - echo "Building application..."
+      - mvn clean package -DskipTests
+
+      - echo "Locating generated JAR..."
+      - JAR_FILE=$(find target -maxdepth 1 -type f -name "*.jar" ! -name "*-plain.jar" | head -n 1)
+
+      - test -n "$JAR_FILE"
+
+      - echo "Using JAR: $JAR_FILE"
+      - cp "$JAR_FILE" app.jar
+
+  post_build:
+    commands:
+      - echo "Build completed"
+      - ls -lh app.jar
+
+artifacts:
+  files:
+    - app.jar
+    - Dockerfile
+    - appspec.yml
+    - deploy/**/*
+  discard-paths: no

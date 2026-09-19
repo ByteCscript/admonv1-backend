@@ -19,7 +19,7 @@ public class HolaController {
 
     @GetMapping("/hola")
     public String hola() {
-        return "Hola, acá está tu primer endpoint con Spring";
+        return "Hola, acá está tu primer endpoint con Spring ejemplo desde johan";
     }
 
     @GetMapping("/db")

@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -32,6 +33,8 @@ public class ApplicationServiceImpl implements IApplicationService {
     private final CallRepository callRepository;
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
+
+    private static final ZoneId COLOMBIA_ZONE = ZoneId.of("America/Bogota");
 
     @Override
     @Transactional
@@ -168,7 +171,7 @@ public class ApplicationServiceImpl implements IApplicationService {
         application.setApartment(apartment);
         application.setResident(resident.get());
         application.setStatus(ApplicationStatus.REGISTERED);
-        application.setCreatedAt(LocalDateTime.now());
+        application.setCreatedAt(LocalDateTime.now(COLOMBIA_ZONE));
 
         Application savedApplication =
                 applicationRepository.save(application);

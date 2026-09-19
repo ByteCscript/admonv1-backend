@@ -1,0 +1,29 @@
+version: 0.0
+
+os: linux
+
+files:
+  - source: /
+    destination: /home/ec2-user/backend
+
+hooks:
+
+  BeforeInstall:
+    - location: deploy/before-install.sh
+      timeout: 60
+      runas: root
+
+  AfterInstall:
+    - location: deploy/after-install.sh
+      timeout: 300
+      runas: root
+
+  ApplicationStart:
+    - location: deploy/start.sh
+      timeout: 120
+      runas: root
+
+  ValidateService:
+    - location: deploy/validate.sh
+      timeout: 60
+      runas: root

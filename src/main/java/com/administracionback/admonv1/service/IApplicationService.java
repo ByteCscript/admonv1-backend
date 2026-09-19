@@ -13,6 +13,11 @@ public interface IApplicationService {
             Long applicationId
     );
 
+    ResponseEntity<ApiResponse<ApplicationEligibilityResponseDTO>> checkApplicationEligibility(
+            Long callId,
+            String email
+    );
+
     ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>> getApplications(
             ApplicationFilterDTO filters,
             int page,

@@ -215,6 +215,100 @@ public class ApplicationServiceImpl implements IApplicationService {
         );
     }
 
+    @Override
+    public ResponseEntity<ApiResponse<ApplicationEligibilityResponseDTO>> checkApplicationEligibility(Long callId, String email) {
+        if (callId == null || email == null) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "La convocatoria y el usuario son obligatorios",
+                            null,
+                            "INVALID_REQUEST"
+                    )
+            );
+        }
+
+        var call = callRepository.findById(callId);
+
+        if (call.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró la convocatoria",
+                            null,
+                            "CALL_NOT_FOUND"
+                    )
+            );
+        }
+
+        var user = userRepository.findByEmail(email);
+
+        if (user.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró el usuario autenticado",
+                            null,
+                            "USER_NOT_FOUND"
+                    )
+            );
+        }
+
+        var apartment = user.get().getApartment();
+
+        if (apartment == null) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "El usuario no tiene un apartamento asociado",
+                            null,
+                            "APARTMENT_NOT_FOUND"
+                    )
+            );
+        }
+        var existingApplication =
+                applicationRepository.findByApartmentIdAndCallId(
+                        apartment.getId(),
+                        call.get().getId()
+                );
+
+
+        if (existingApplication.isPresent()) {
+
+            Application application = existingApplication.get();
+
+            ApplicationEligibilityResponseDTO.ApplicationSummaryDTO summary =
+                    new ApplicationEligibilityResponseDTO.ApplicationSummaryDTO(
+                            application.getId(),
+                            application.getApplicationNumber(),
+                            application.getStatus().name(),
+                            application.getCreatedAt()
+                    );
+
+            return ResponseEntity.ok(
+                    new ApiResponse<>(
+                            "El usuario ya tiene una postulación para esta convocatoria",
+                            new ApplicationEligibilityResponseDTO(
+                                    false,
+                                    summary
+                            ),
+                            null
+                    )
+            );
+        }
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        "El usuario puede postularse a esta convocatoria",
+                        new ApplicationEligibilityResponseDTO(
+                                true,
+                                null
+                        ),
+                        null
+                )
+        );
+    }
+
 
     @Override
     public ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>> getApplications(ApplicationFilterDTO filters, int page, int size, String sortBy, String direction) {

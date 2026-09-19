@@ -40,6 +40,10 @@ public class Document {
     @Column(nullable = false)
     private DocumentStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DocumentType documentType;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "application_id")
     private Application application;

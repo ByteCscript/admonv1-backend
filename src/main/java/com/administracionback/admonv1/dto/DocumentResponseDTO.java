@@ -10,6 +10,8 @@ public record DocumentResponseDTO(
         Long size,
         String s3Key,
         LocalDateTime createdAt,
-        LocalDateTime uploadedAt
+        LocalDateTime uploadedAt,
+        String documentType,
+        String documentTypeLabel
 ) {
 }

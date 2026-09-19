@@ -4,6 +4,8 @@ import com.administracionback.admonv1.dto.*;
 import com.administracionback.admonv1.model.Application;
 import com.administracionback.admonv1.model.ApplicationStatus;
 import com.administracionback.admonv1.model.Document;
+import com.administracionback.admonv1.model.DocumentStatus;
+import com.administracionback.admonv1.model.DocumentType;
 import com.administracionback.admonv1.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -15,9 +17,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +33,8 @@ public class ApplicationServiceImpl implements IApplicationService {
     private final CallRepository callRepository;
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
+
+    private static final ZoneId COLOMBIA_ZONE = ZoneId.of("America/Bogota");
 
     @Override
     @Transactional
@@ -117,6 +125,44 @@ public class ApplicationServiceImpl implements IApplicationService {
             }
         }
 
+        boolean anyNotUploaded = documents.stream()
+                .anyMatch(document ->
+                        document.getStatus() != DocumentStatus.UPLOADED
+                );
+
+        if (anyNotUploaded) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "Uno o más documentos no han finalizado su carga",
+                            null,
+                            "DOCUMENT_NOT_UPLOADED"
+                    )
+            );
+        }
+
+        Set<DocumentType> providedTypes = documents.stream()
+                .map(Document::getDocumentType)
+                .collect(Collectors.toSet());
+
+        List<String> missingRequired = Arrays.stream(DocumentType.values())
+                .filter(DocumentType::isRequired)
+                .filter(type -> !providedTypes.contains(type))
+                .map(DocumentType::getLabel)
+                .toList();
+
+        if (!missingRequired.isEmpty()) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "Faltan documentos obligatorios: "
+                                    + String.join(", ", missingRequired),
+                            null,
+                            "REQUIRED_DOCUMENTS_MISSING"
+                    )
+            );
+        }
+
         application.setApplicationNumber(
                 "POST-" + UUID.randomUUID()
         );
@@ -125,7 +171,7 @@ public class ApplicationServiceImpl implements IApplicationService {
         application.setApartment(apartment);
         application.setResident(resident.get());
         application.setStatus(ApplicationStatus.REGISTERED);
-        application.setCreatedAt(LocalDateTime.now());
+        application.setCreatedAt(LocalDateTime.now(COLOMBIA_ZONE));
 
         Application savedApplication =
                 applicationRepository.save(application);
@@ -164,6 +210,100 @@ public class ApplicationServiceImpl implements IApplicationService {
                 new ApiResponse<>(
                         "Postulación consultada correctamente",
                         mapToDetailDTO(entity),
+                        null
+                )
+        );
+    }
+
+    @Override
+    public ResponseEntity<ApiResponse<ApplicationEligibilityResponseDTO>> checkApplicationEligibility(Long callId, String email) {
+        if (callId == null || email == null) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "La convocatoria y el usuario son obligatorios",
+                            null,
+                            "INVALID_REQUEST"
+                    )
+            );
+        }
+
+        var call = callRepository.findById(callId);
+
+        if (call.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró la convocatoria",
+                            null,
+                            "CALL_NOT_FOUND"
+                    )
+            );
+        }
+
+        var user = userRepository.findByEmail(email);
+
+        if (user.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró el usuario autenticado",
+                            null,
+                            "USER_NOT_FOUND"
+                    )
+            );
+        }
+
+        var apartment = user.get().getApartment();
+
+        if (apartment == null) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "El usuario no tiene un apartamento asociado",
+                            null,
+                            "APARTMENT_NOT_FOUND"
+                    )
+            );
+        }
+        var existingApplication =
+                applicationRepository.findByApartmentIdAndCallId(
+                        apartment.getId(),
+                        call.get().getId()
+                );
+
+
+        if (existingApplication.isPresent()) {
+
+            Application application = existingApplication.get();
+
+            ApplicationEligibilityResponseDTO.ApplicationSummaryDTO summary =
+                    new ApplicationEligibilityResponseDTO.ApplicationSummaryDTO(
+                            application.getId(),
+                            application.getApplicationNumber(),
+                            application.getStatus().name(),
+                            application.getCreatedAt()
+                    );
+
+            return ResponseEntity.ok(
+                    new ApiResponse<>(
+                            "El usuario ya tiene una postulación para esta convocatoria",
+                            new ApplicationEligibilityResponseDTO(
+                                    false,
+                                    summary
+                            ),
+                            null
+                    )
+            );
+        }
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        "El usuario puede postularse a esta convocatoria",
+                        new ApplicationEligibilityResponseDTO(
+                                true,
+                                null
+                        ),
                         null
                 )
         );
@@ -273,6 +413,8 @@ public class ApplicationServiceImpl implements IApplicationService {
             Document document
     ) {
 
+        DocumentType type = document.getDocumentType();
+
         return new DocumentResponseDTO(
                 document.getId(),
                 document.getOriginalName(),
@@ -280,7 +422,9 @@ public class ApplicationServiceImpl implements IApplicationService {
                 document.getSize(),
                 document.getS3Key(),
                 document.getCreatedAt(),
-                document.getUploadedAt()
+                document.getUploadedAt(),
+                type != null ? type.name() : null,
+                type != null ? type.getLabel() : null
         );
     }
 

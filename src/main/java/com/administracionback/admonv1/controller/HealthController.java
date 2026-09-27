@@ -1,5 +1,6 @@
 package com.administracionback.admonv1.controller;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,17 +10,22 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
-public class HolaController {
+public class HealthController {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public HolaController(JdbcTemplate jdbcTemplate) {
+    public HealthController(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
     @GetMapping("/hola")
     public String hola() {
         return "Hola, Cheyoung healthy V1.0.0.2";
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<String> health() {
+        return ResponseEntity.ok("UP");
     }
 
     @GetMapping("/db")

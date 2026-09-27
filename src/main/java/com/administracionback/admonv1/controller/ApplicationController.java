@@ -31,6 +31,20 @@ public class ApplicationController {
         return applicationService.getApplication(applicationId);
     }
 
+    @GetMapping("/check")
+    public ResponseEntity<ApiResponse<ApplicationEligibilityResponseDTO>> checkApplicationEligibility(
+            @RequestParam Long callId,
+            Authentication authentication) {
+
+        String email = authentication.getName();
+
+        return applicationService.checkApplicationEligibility(
+                callId,
+                email
+        );
+    }
+
+
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>>
     getApplications(

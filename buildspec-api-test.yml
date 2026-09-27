@@ -1,0 +1,109 @@
+version: 0.2
+
+phases:
+
+  install:
+    runtime-versions:
+      java: corretto21
+      python: 3.10
+
+    commands:
+      - echo "Java version:"
+      - java -version
+
+      - echo "Python version:"
+      - python3 --version
+
+      - echo "Installing API test dependencies..."
+      - python3 -m pip install --no-cache-dir pytest requests
+
+
+  pre_build:
+    commands:
+
+      - echo "Preparing test configuration..."
+      - mkdir -p /tmp/backend-api-test
+
+      - |
+        cat > /tmp/backend-api-test/application.properties <<'EOF'
+        spring.datasource.url=jdbc:h2:mem:parexdb
+        spring.datasource.driver-class-name=org.h2.Driver
+        spring.datasource.username=sa
+        spring.datasource.password=
+
+        spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+        spring.jpa.hibernate.ddl-auto=create
+
+        spring.jpa.show-sql=false
+        spring.jpa.defer-datasource-initialization=true
+        spring.sql.init.mode=always
+
+        spring.h2.console.enabled=false
+
+        aws.s3.region=us-east-1
+        aws.s3.bucket-name=aes-puj-documents
+        aws.s3.presign-duration-minutes=5
+
+        jwt.secret=66VN-test-secret-for-api-tests-123456789
+        jwt.expiration=3600000
+        jwt.issuer=adminv1
+
+        app.frontend.url=http://localhost:3000
+        EOF
+
+      - echo "Starting backend from BuildArtifact..."
+
+      - |
+        nohup java -jar app.jar \
+          --spring.config.additional-location=file:/tmp/backend-api-test/ \
+          --server.port=8080 \
+          > /tmp/backend-api-test/backend.log 2>&1 &
+
+        echo $! > /tmp/backend-api-test/backend.pid
+
+
+  build:
+    commands:
+
+      - echo "Waiting for backend to start..."
+
+      - |
+        for i in $(seq 1 60); do
+
+          if curl -fs http://127.0.0.1:8080/api/health > /dev/null; then
+            echo "Backend is UP."
+            break
+          fi
+
+          echo "Waiting for backend... attempt $i/60"
+          sleep 1
+
+          if [ "$i" -eq 60 ]; then
+            echo "Backend failed to start."
+            cat /tmp/backend-api-test/backend.log
+            exit 1
+          fi
+
+        done
+
+      - echo "Running API tests..."
+
+      - python3 -m pytest api-tests -v
+
+
+  post_build:
+    commands:
+      - echo "API tests completed."
+
+
+  finally:
+    commands:
+      - echo "Stopping test backend..."
+
+      - |
+        if [ -f /tmp/backend-api-test/backend.pid ]; then
+          kill "$(cat /tmp/backend-api-test/backend.pid)" || true
+        fi
+
+      - echo "Backend log:"
+      - cat /tmp/backend-api-test/backend.log || true

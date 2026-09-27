@@ -33,5 +33,7 @@ artifacts:
     - app.jar
     - Dockerfile
     - appspec.yml
+    - buildspec-api-test.yml
+    - api-tests/**/*
     - deploy/**/*
   discard-paths: no

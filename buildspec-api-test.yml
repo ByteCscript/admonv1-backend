@@ -93,14 +93,12 @@ phases:
 
 
     finally:
-      commands:
+      - echo "Stopping test backend..."
 
-        - echo "Stopping test backend..."
+      - |
+        if [ -f /tmp/backend-api-test/backend.pid ]; then
+          kill "$(cat /tmp/backend-api-test/backend.pid)" || true
+        fi
 
-        - |
-          if [ -f /tmp/backend-api-test/backend.pid ]; then
-            kill "$(cat /tmp/backend-api-test/backend.pid)" || true
-          fi
-
-        - echo "Backend test log:"
-        - cat /tmp/backend-api-test/backend.log || true
+      - echo "Backend test log:"
+      - cat /tmp/backend-api-test/backend.log || true

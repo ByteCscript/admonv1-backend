@@ -22,6 +22,7 @@ phases:
     commands:
 
       - echo "Preparing test configuration..."
+
       - mkdir -p /tmp/backend-api-test
 
       - |
@@ -91,19 +92,15 @@ phases:
       - python3 -m pytest api-tests -v
 
 
-  post_build:
-    commands:
-      - echo "API tests completed."
+    finally:
+      commands:
 
+        - echo "Stopping test backend..."
 
-  finally:
-    commands:
-      - echo "Stopping test backend..."
+        - |
+          if [ -f /tmp/backend-api-test/backend.pid ]; then
+            kill "$(cat /tmp/backend-api-test/backend.pid)" || true
+          fi
 
-      - |
-        if [ -f /tmp/backend-api-test/backend.pid ]; then
-          kill "$(cat /tmp/backend-api-test/backend.pid)" || true
-        fi
-
-      - echo "Backend log:"
-      - cat /tmp/backend-api-test/backend.log || true
+        - echo "Backend test log:"
+        - cat /tmp/backend-api-test/backend.log || true

@@ -6,6 +6,8 @@ files:
   - source: /
     destination: /home/ec2-user/backend
 
+file_exists_behavior: OVERWRITE
+
 hooks:
 
   BeforeInstall:

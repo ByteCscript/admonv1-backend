@@ -45,7 +45,7 @@ phases:
         aws.s3.bucket-name=aes-puj-documents
         aws.s3.presign-duration-minutes=5
 
-        jwt.secret=66VN-test-secret-for-api-tests-123456789
+        jwt.secret=${JWT_SECRET}
         jwt.expiration=3600000
         jwt.issuer=adminv1
 

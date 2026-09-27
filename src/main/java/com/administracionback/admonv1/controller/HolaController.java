@@ -19,7 +19,7 @@ public class HolaController {
 
     @GetMapping("/hola")
     public String hola() {
-        return "Hola, Cheyoung healthy V1.0.0";
+        return "Hola, Cheyoung healthy V1.0.0.2";
     }
 
     @GetMapping("/db")

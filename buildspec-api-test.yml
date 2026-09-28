@@ -48,6 +48,7 @@ phases:
         jwt.secret=${JWT_SECRET}
         jwt.expiration=3600000
         jwt.issuer=adminv1
+        
 
         app.frontend.url=http://localhost:3000
         EOF

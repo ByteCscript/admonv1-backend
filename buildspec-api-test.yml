@@ -44,6 +44,7 @@ phases:
         aws.s3.region=us-east-1
         aws.s3.bucket-name=aes-puj-documents
         aws.s3.presign-duration-minutes=5
+        aws.s3.key-prefix=ci-tests
 
         jwt.secret=${JWT_SECRET}
         jwt.expiration=3600000

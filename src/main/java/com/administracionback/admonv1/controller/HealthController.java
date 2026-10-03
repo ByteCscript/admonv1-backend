@@ -20,7 +20,7 @@ public class HealthController {
 
     @GetMapping("/hola")
     public String hola() {
-        return "Hola, Cheyoung healthy V1.0.0.2";
+        return "Hola, Cheyoung healthy V11322ad.0.0.2";
     }
 
     @GetMapping("/health")

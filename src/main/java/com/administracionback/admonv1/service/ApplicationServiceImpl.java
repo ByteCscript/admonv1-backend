@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -85,13 +86,14 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
 
-        boolean exists = applicationRepository
-                .existsByApartmentIdAndCallId(
+        var applicationOptional = applicationRepository
+                .findByApartmentIdAndCallIdAndStatus(
                         apartment.getId(),
-                        call.get().getId()
+                        call.get().getId(),
+                        ApplicationStatus.REGISTERED
                 );
 
-        if (exists) {
+        if (applicationOptional.isPresent()) {
 
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
                     new ApiResponse<>(
@@ -163,9 +165,7 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
 
-        application.setApplicationNumber(
-                "POST-" + UUID.randomUUID()
-        );
+        application.setApplicationNumber(String.valueOf(UUID.randomUUID()));
 
         application.setCall(call.get());
         application.setApartment(apartment);
@@ -267,9 +267,10 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
         var existingApplication =
-                applicationRepository.findByApartmentIdAndCallId(
+                applicationRepository.findByApartmentIdAndCallIdAndStatus(
                         apartment.getId(),
-                        call.get().getId()
+                        call.get().getId(),
+                        ApplicationStatus.REGISTERED
                 );
 
 
@@ -352,6 +353,110 @@ public class ApplicationServiceImpl implements IApplicationService {
                 new ApiResponse<>(
                         "Postulaciones consultadas correctamente",
                         response,
+                        null
+                )
+        );
+    }
+
+    @Override
+    @Transactional
+    public ResponseEntity<ApiResponse<ApplicationResponseDTO>> cancelApplication(Long applicationId, String email) {
+        if (applicationId == null || email == null) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "La postulación y el usuario son obligatorios",
+                            null,
+                            "INVALID_REQUEST"
+                    )
+            );
+        }
+
+        var application = applicationRepository.findById(applicationId);
+
+        if (application.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró la postulación",
+                            null,
+                            "APPLICATION_NOT_FOUND"
+                    )
+            );
+        }
+
+        Application entity = application.get();
+
+        var user = userRepository.findByEmail(email);
+
+        if (user.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró el usuario autenticado",
+                            null,
+                            "USER_NOT_FOUND"
+                    )
+            );
+        }
+
+        /*
+         * La postulación solamente puede ser cancelada
+         * por el usuario que la creó.
+         */
+        if (!entity.getResident().getId().equals(user.get().getId())) {
+
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                    new ApiResponse<>(
+                            "No tiene permisos para cancelar esta postulación",
+                            null,
+                            "APPLICATION_FORBIDDEN"
+                    )
+            );
+        }
+
+        /*
+         * Solo una postulación REGISTERED puede cancelarse.
+         */
+        if (entity.getStatus() != ApplicationStatus.REGISTERED) {
+
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    new ApiResponse<>(
+                            "La postulación no puede ser cancelada en su estado actual",
+                            null,
+                            "APPLICATION_CANNOT_BE_CANCELLED"
+                    )
+            );
+        }
+
+        var call = entity.getCall();
+
+        /*
+         * Validación de fechas de la convocatoria.
+         */
+        LocalDate today = LocalDate.now(COLOMBIA_ZONE);
+
+        if (today.isBefore(call.getStartDate())
+                || today.isAfter(call.getEndDate())) {
+
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    new ApiResponse<>(
+                            "La postulación solo puede cancelarse durante las fechas de la convocatoria",
+                            null,
+                            "APPLICATION_PERIOD_CLOSED"
+                    )
+            );
+        }
+
+        entity.setStatus(ApplicationStatus.CANCELLED);
+
+        Application savedApplication =
+                applicationRepository.save(entity);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        "Postulación cancelada correctamente",
+                        mapToDTO(savedApplication),
                         null
                 )
         );

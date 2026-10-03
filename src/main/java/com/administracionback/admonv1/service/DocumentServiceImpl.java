@@ -43,6 +43,9 @@ public class DocumentServiceImpl implements IDocumentService {
     @Value("${aws.s3.presign-duration-minutes}")
     private long presignDurationMinutes;
 
+    @Value("${aws.s3.key-prefix}")
+    private String keyPrefix;
+
     @Override
     public ResponseEntity<ApiResponse<DocumentPresignedResponseDTO>> generatePresignedUrl(DocumentPresignedRequestDTO request) {
         {
@@ -90,7 +93,8 @@ public class DocumentServiceImpl implements IDocumentService {
 
             UUID documentId = UUID.randomUUID();
 
-            String key = "documents/"
+            String key = keyPrefix
+                    +"/"
                     + documentId
                     + "/"
                     + request.fileName();

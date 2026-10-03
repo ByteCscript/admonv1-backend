@@ -18,12 +18,10 @@ phases:
       - mvn clean package -DskipTests
 
       - echo "Locating generated JAR..."
-      - JAR_FILE=$(find target -maxdepth 1 -type f -name "*.jar" ! -name "*-plain.jar" | head -n 1)
-
-      - test -n "$JAR_FILE"
-
-      - echo "Using JAR: $JAR_FILE"
-      - cp "$JAR_FILE" app.jar
+      - 'JAR_FILE=$(find target -maxdepth 1 -type f -name "*.jar" ! -name "*-plain.jar" | head -n 1)'
+      - 'test -n "$JAR_FILE"'
+      - 'echo "Using JAR: $JAR_FILE"'
+      - 'cp "$JAR_FILE" app.jar'
 
   post_build:
     commands:
@@ -35,5 +33,7 @@ artifacts:
     - app.jar
     - Dockerfile
     - appspec.yml
+    - buildspec-api-test.yml
+    - api-tests/**/*
     - deploy/**/*
   discard-paths: no

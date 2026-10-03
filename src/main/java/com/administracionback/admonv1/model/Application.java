@@ -10,13 +10,7 @@ import java.util.List;
 
 @Entity
 @Table(
-        name = "applications",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_application_apartment_call",
-                        columnNames = {"apartment_id", "call_id"}
-                )
-        }
+        name = "applications"
 )
 @Getter
 @Setter

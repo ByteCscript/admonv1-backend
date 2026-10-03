@@ -96,11 +96,31 @@ VALUES (
            1,
            'Convocatoria Parqueadero Comunal 2026',
            'Asignación de parqueaderos comunales mediante sorteo',
-           '2026-08-01',
-           '2026-09-30',
+           '2026-10-01',
+           '2026-10-30',
            200,
            'OPEN'
+       ),
+       (
+           2,
+           'Convocatoria Parqueadero Comunal 2026 - 2',
+           'Asignación de parqueaderos comunales mediante sorteo',
+           '2026-10-01',
+           '2026-11-30',
+           180,
+           'OPEN'
+       ),
+       (
+           3,
+           'Convocatoria Parqueadero Comunal 2027 - 1',
+           'Asignación de parqueaderos comunales mediante sorteo',
+           '2026-10-01',
+           '2027-11-30',
+           190,
+           'OPEN'
        );
+
+
 
 
 

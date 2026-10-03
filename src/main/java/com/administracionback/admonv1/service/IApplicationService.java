@@ -25,4 +25,9 @@ public interface IApplicationService {
             String sortBy,
             String direction
     );
+
+    ResponseEntity<ApiResponse<ApplicationResponseDTO>> cancelApplication(
+            Long applicationId,
+            String email
+    );
 }

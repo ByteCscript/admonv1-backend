@@ -2,14 +2,15 @@ package com.administracionback.admonv1.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:5173")
-public class HolaController {
+public class HealthController {
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -19,7 +20,7 @@ public class HolaController {
 
     @GetMapping("/hola")
     public String hola() {
-        return "Hola, Cheyoung healthy V1.0.0.2";
+        return "Hola, Cheyoung healthy V11322ad.0.0.2";
     }
 
     @GetMapping("/health")

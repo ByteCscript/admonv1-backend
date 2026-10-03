@@ -44,6 +44,18 @@ public class ApplicationController {
         );
     }
 
+    @PatchMapping("/{applicationId}/cancel")
+    public ResponseEntity<ApiResponse<ApplicationResponseDTO>> cancelApplication(
+            @PathVariable Long applicationId,
+            Authentication authentication) {
+
+        String email = authentication.getName();
+
+        return applicationService.cancelApplication(
+                applicationId,
+                email
+        );
+    }
 
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>>

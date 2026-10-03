@@ -43,7 +43,7 @@ public class DocumentServiceImpl implements IDocumentService {
     @Value("${aws.s3.presign-duration-minutes}")
     private long presignDurationMinutes;
 
-    @Value("${aws.s3.key-prefix:documents/}")
+    @Value("${aws.s3.key-prefix}")
     private String keyPrefix;
 
     @Override

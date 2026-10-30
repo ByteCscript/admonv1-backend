@@ -3,6 +3,7 @@ package com.administracionback.admonv1.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.time.LocalDate;
 
@@ -33,4 +34,13 @@ public class Call {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private CallStatus status;
+
+    /*
+     * Cierre administrativo de la convocatoria (RN-08).
+     * El estado visible se deriva con deriveStatus(CallService);
+     * esta columna solo registra el cierre manual.
+     */
+    @Column(nullable = false)
+    @ColumnDefault("false")
+    private boolean closedManually;
 }

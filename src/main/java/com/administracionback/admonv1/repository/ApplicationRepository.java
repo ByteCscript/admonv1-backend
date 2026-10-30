@@ -15,4 +15,6 @@ public interface ApplicationRepository extends JpaRepository<Application, Long>,
             Long callId,
             ApplicationStatus status
     );
+
+    long countByCallId(Long callId);
 }

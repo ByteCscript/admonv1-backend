@@ -504,6 +504,9 @@ public class ApplicationServiceImpl implements IApplicationService {
                 application.getCall().getId(),
                 application.getCall().getTitle(),
 
+                application.getCall().getStartDate(),
+                application.getCall().getEndDate(),
+
                 application.getStatus().name(),
                 application.getCreatedAt(),
 

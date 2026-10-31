@@ -62,6 +62,14 @@ VALUES (
            'Usuario Apartamento 101',
            TRUE,
            1
+       ),
+       (
+           2,
+           'admin@test.com',
+           '$2y$10$FOnAuAc6RbshJevn.hT.HuiRqqtdWzqt4CxsEfVUFM48/CVdQRtuS',
+           'Administración',
+           TRUE,
+           NULL
        );
 
 
@@ -76,7 +84,16 @@ INSERT INTO user_roles (
 VALUES (
            1,
            2
+       ),
+       (
+           2,
+           1
        );
+
+-- Los ids insertados a mano no avanzan el identity:
+-- se reinicia para que los próximos inserts no choquen.
+ALTER TABLE users ALTER COLUMN id RESTART WITH 3;
+ALTER TABLE roles ALTER COLUMN id RESTART WITH 3;
 
 
 -- =========================================================
@@ -119,6 +136,10 @@ VALUES (
            190,
            'OPEN'
        );
+
+-- Los ids 1-3 se insertaron a mano: se reinicia el identity de calls
+-- para que una convocatoria creada por la API no choque con ellos.
+ALTER TABLE calls ALTER COLUMN id RESTART WITH 4;
 
 
 

@@ -60,6 +60,21 @@ public class ApplicationServiceImpl implements IApplicationService {
             return ResponseEntity.notFound().build();
         }
 
+        /*
+         * RN-10: la convocatoria cerrada manualmente por Administración
+         * no admite nuevas postulaciones.
+         */
+        if (call.get().isClosedManually()) {
+
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    new ApiResponse<>(
+                            "La convocatoria está cerrada y no admite nuevas postulaciones",
+                            null,
+                            "CALL_CLOSED"
+                    )
+            );
+        }
+
         var resident = userRepository.findByEmail(email);
 
         if (resident.isEmpty()) {
@@ -503,6 +518,9 @@ public class ApplicationServiceImpl implements IApplicationService {
 
                 application.getCall().getId(),
                 application.getCall().getTitle(),
+
+                application.getCall().getStartDate(),
+                application.getCall().getEndDate(),
 
                 application.getStatus().name(),
                 application.getCreatedAt(),

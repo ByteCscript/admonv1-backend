@@ -3,6 +3,7 @@ package com.administracionback.admonv1.service;
 import com.administracionback.admonv1.dto.*;
 import com.administracionback.admonv1.model.Application;
 import com.administracionback.admonv1.model.ApplicationStatus;
+import com.administracionback.admonv1.model.CallStatus;
 import com.administracionback.admonv1.model.Document;
 import com.administracionback.admonv1.model.DocumentStatus;
 import com.administracionback.admonv1.model.DocumentType;
@@ -61,16 +62,44 @@ public class ApplicationServiceImpl implements IApplicationService {
         }
 
         /*
-         * RN-10: la convocatoria cerrada manualmente por Administración
-         * no admite nuevas postulaciones.
+         * RN-09 / RN-10: el estado derivado de la convocatoria (fechas +
+         * cierre manual, zona America/Bogota) decide si admite postulaciones.
+         * Si el derivado ≠ OPEN → 409 CALL_CLOSED (coherente con cierre manual).
          */
-        if (call.get().isClosedManually()) {
+        CallStatus derivedStatus;
+        LocalDate today = LocalDate.now(COLOMBIA_ZONE);
+
+        if (call.get().isClosedManually() || today.isAfter(call.get().getEndDate())) {
+            derivedStatus = CallStatus.CLOSED;
+        } else if (today.isBefore(call.get().getStartDate())) {
+            derivedStatus = CallStatus.SCHEDULED;
+        } else {
+            derivedStatus = CallStatus.OPEN;
+        }
+
+        if (derivedStatus != CallStatus.OPEN) {
 
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
                     new ApiResponse<>(
                             "La convocatoria está cerrada y no admite nuevas postulaciones",
                             null,
                             "CALL_CLOSED"
+                    )
+            );
+        }
+
+        /*
+         * RN-13: sin cupos restantes no se admiten nuevas postulaciones
+         * (decisión Q3 del CU 1.2.4).
+         */
+        if (call.get().getAvailableSlots() == null
+                || call.get().getAvailableSlots() <= 0) {
+
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    new ApiResponse<>(
+                            "La convocatoria no tiene cupos disponibles",
+                            null,
+                            "CALL_SLOTS_EXHAUSTED"
                     )
             );
         }
@@ -524,6 +553,9 @@ public class ApplicationServiceImpl implements IApplicationService {
 
                 application.getStatus().name(),
                 application.getCreatedAt(),
+
+                application.getReviewedAt(),
+                application.getRejectionReason(),
 
                 application.getDocuments()
                         .stream()

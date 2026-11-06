@@ -131,10 +131,13 @@ public class ApplicationServiceImpl implements IApplicationService {
         }
 
         var applicationOptional = applicationRepository
-                .findByApartmentIdAndCallIdAndStatus(
+                .findFirstByApartmentIdAndCallIdAndStatusInOrderByIdAsc(
                         apartment.getId(),
                         call.get().getId(),
-                        ApplicationStatus.REGISTERED
+                        List.of(
+                                ApplicationStatus.REGISTERED,
+                                ApplicationStatus.APPROVED
+                        )
                 );
 
         if (applicationOptional.isPresent()) {
@@ -311,10 +314,13 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
         var existingApplication =
-                applicationRepository.findByApartmentIdAndCallIdAndStatus(
+                applicationRepository.findFirstByApartmentIdAndCallIdAndStatusInOrderByIdAsc(
                         apartment.getId(),
                         call.get().getId(),
-                        ApplicationStatus.REGISTERED
+                        List.of(
+                                ApplicationStatus.REGISTERED,
+                                ApplicationStatus.APPROVED
+                        )
                 );
 
 
@@ -556,6 +562,10 @@ public class ApplicationServiceImpl implements IApplicationService {
 
                 application.getReviewedAt(),
                 application.getRejectionReason(),
+
+                application.getDrawResult() == null
+                        ? null
+                        : application.getDrawResult().name(),
 
                 application.getDocuments()
                         .stream()

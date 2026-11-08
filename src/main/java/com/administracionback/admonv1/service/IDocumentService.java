@@ -3,6 +3,7 @@ package com.administracionback.admonv1.service;
 import com.administracionback.admonv1.dto.ApiResponse;
 import com.administracionback.admonv1.dto.DocumentPresignedRequestDTO;
 import com.administracionback.admonv1.dto.DocumentPresignedResponseDTO;
+import com.administracionback.admonv1.dto.DocumentReadUrlResponseDTO;
 import com.administracionback.admonv1.dto.DocumentResponseDTO;
 import com.administracionback.admonv1.dto.DocumentTypeResponseDTO;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,11 @@ public interface IDocumentService {
     );
 
     ResponseEntity<ApiResponse<DocumentResponseDTO>> completeUpload(
+            UUID documentId
+    );
+
+    ResponseEntity<ApiResponse<DocumentReadUrlResponseDTO>> generateReadUrl(
+            Long applicationId,
             UUID documentId
     );
 

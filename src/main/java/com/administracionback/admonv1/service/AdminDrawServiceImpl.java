@@ -2,6 +2,9 @@ package com.administracionback.admonv1.service;
 
 import com.administracionback.admonv1.dto.ApiResponse;
 import com.administracionback.admonv1.dto.DrawResponseDTO;
+import com.administracionback.admonv1.dto.DrawResultsDTO;
+import com.administracionback.admonv1.dto.DrawResultRowDTO;
+import com.administracionback.admonv1.dto.IntegrityHashDTO;
 import com.administracionback.admonv1.model.Application;
 import com.administracionback.admonv1.model.ApplicationStatus;
 import com.administracionback.admonv1.model.Call;
@@ -42,6 +45,10 @@ import java.util.stream.Collectors;
  *  - Los seleccionados pasan a APPROVED y consumen cupos; el resto queda
  *    NOT_SELECTED sin cambiar de estado ni auditoría.
  *  - El orden es reproducible a partir de la semilla (SHA-256 -> Random).
+ *
+ * Integridad (D3): tras ejecutar el sorteo se calcula el SHA-256 de los
+ * bytes exactos del CSV exportado y se persiste en draw_integrity_hash,
+ * referenciando el CallDraw de la convocatoria.
  */
 @Service
 @RequiredArgsConstructor
@@ -55,6 +62,7 @@ public class AdminDrawServiceImpl implements IAdminDrawService {
     private final ApplicationRepository applicationRepository;
     private final CallDrawRepository callDrawRepository;
     private final ICallService callService;
+    private final IDrawIntegrityHashService integrityHashService;
 
     @Override
     @Transactional
@@ -145,7 +153,11 @@ public class AdminDrawServiceImpl implements IAdminDrawService {
                 normalizedSeed
         );
 
+        int position = 0;
         for (Application application : participants) {
+
+            position++;
+            application.setDrawPosition(position);
 
             if (winnerIds.contains(application.getId())) {
 
@@ -178,6 +190,14 @@ public class AdminDrawServiceImpl implements IAdminDrawService {
         callDraw.setSelectedCount(selected);
 
         CallDraw savedDraw = callDrawRepository.save(callDraw);
+
+        /*
+         * D3: huella de integridad del CSV que se exportará. Se genera a
+         * partir de los mismos participantes y orden (draw_position) que el
+         * endpoint de exportación, por lo tanto ambos comparten el mismo hash.
+         */
+        byte[] csvBytes = buildCsvBytes(participants);
+        integrityHashService.generateAndSaveHash(callId, csvBytes);
 
         return ResponseEntity.ok(
                 new ApiResponse<>(
@@ -226,6 +246,133 @@ public class AdminDrawServiceImpl implements IAdminDrawService {
                 new ApiResponse<>(
                         "Sorteo consultado correctamente",
                         buildResponse(callDraw, results),
+                        null
+                )
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseEntity<ApiResponse<DrawResultsDTO>> getDrawResults(
+            Long callId
+    ) {
+
+        if (callId == null || callId <= 0) {
+
+            return error(HttpStatus.BAD_REQUEST,
+                    "El identificador de la convocatoria es inválido",
+                    "INVALID_CALL_ID",
+                    new DrawResultsDTO(List.of(), null)
+            );
+        }
+
+        Call call = callRepository.findById(callId).orElse(null);
+
+        if (call == null) {
+
+            return error(HttpStatus.NOT_FOUND,
+                    "No se encontró la convocatoria",
+                    "CALL_NOT_FOUND",
+                    new DrawResultsDTO(List.of(), null)
+            );
+        }
+
+        List<Application> results = applicationRepository
+                .findByCallIdWithDrawResult(callId);
+
+        List<DrawResultRowDTO> rows = results.stream()
+                .map(this::mapToRow)
+                .collect(Collectors.toList());
+
+        IntegrityHashDTO integrityHash = integrityHashService
+                .getIntegrityHash(callId);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        "Resultado del sorteo consultado correctamente",
+                        new DrawResultsDTO(rows, integrityHash),
+                        null
+                )
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseEntity<ApiResponse<IntegrityHashDTO>> getIntegrityHash(
+            Long callId
+    ) {
+
+        if (callId == null || callId <= 0) {
+
+            return error(HttpStatus.BAD_REQUEST,
+                    "El identificador de la convocatoria es inválido",
+                    "INVALID_CALL_ID",
+                    null
+            );
+        }
+
+        Call call = callRepository.findById(callId).orElse(null);
+
+        if (call == null) {
+
+            return error(HttpStatus.NOT_FOUND,
+                    "No se encontró la convocatoria",
+                    "CALL_NOT_FOUND",
+                    null
+            );
+        }
+
+        IntegrityHashDTO integrityHash = integrityHashService
+                .getIntegrityHash(callId);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        "Huella de integridad consultada correctamente",
+                        integrityHash,
+                        null
+                )
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseEntity<ApiResponse<byte[]>> exportDrawCsv(Long callId) {
+
+        if (callId == null || callId <= 0) {
+
+            return error(HttpStatus.BAD_REQUEST,
+                    "El identificador de la convocatoria es inválido",
+                    "INVALID_CALL_ID",
+                    null
+            );
+        }
+
+        Call call = callRepository.findById(callId).orElse(null);
+
+        if (call == null) {
+
+            return error(HttpStatus.NOT_FOUND,
+                    "No se encontró la convocatoria",
+                    "CALL_NOT_FOUND",
+                    null
+            );
+        }
+
+        List<Application> results = applicationRepository
+                .findByCallIdWithDrawResult(callId);
+
+        /*
+         * CSV ordenado por draw_position (misma consulta que getDrawResults).
+         * La huella se (re)genera sobre estos mismos bytes para garantizar
+         * que el archivo descargado coincide con draw_integrity_hash (D3).
+         */
+        byte[] csvBytes = buildCsvBytes(results);
+        integrityHashService.generateAndSaveHash(callId, csvBytes);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        "CSV del sorteo exportado correctamente",
+                        csvBytes,
                         null
                 )
         );
@@ -339,6 +486,109 @@ public class AdminDrawServiceImpl implements IAdminDrawService {
                 (int) selected,
                 notSelected,
                 items
+        );
+    }
+
+    /*
+     * D4: mapea una postulación sorteada a su fila de resultado, incluyendo
+     * torre, apartamento, residente, resultado, estado y posición de sorteo.
+     */
+    private DrawResultRowDTO mapToRow(Application application) {
+
+        return new DrawResultRowDTO(
+                application.getId(),
+                application.getApplicationNumber(),
+                application.getApartment().getNumber(),
+                application.getApartment().getTower().getName(),
+                application.getResident().getName(),
+                application.getDrawResult() == null
+                        ? null
+                        : application.getDrawResult().name(),
+                application.getStatus().name(),
+                application.getDrawPosition()
+        );
+    }
+
+    /*
+     * Genera los bytes del CSV con las columnas acordadas (D2), ordenados
+     * por draw_position. Cada campo se escapa según RFC 4180.
+     */
+    private byte[] buildCsvBytes(List<Application> results) {
+
+        StringBuilder builder = new StringBuilder();
+
+        builder.append("application_id");
+        builder.append(",");
+        builder.append("application_number");
+        builder.append(",");
+        builder.append("apartment_number");
+        builder.append(",");
+        builder.append("resident_name");
+        builder.append(",");
+        builder.append("resident_id");
+        builder.append(",");
+        builder.append("result");
+        builder.append(",");
+        builder.append("status");
+        builder.append(",");
+        builder.append("draw_position");
+        builder.append("\n");
+
+        for (Application application : results) {
+
+            builder.append(csvField(application.getId()));
+            builder.append(",");
+            builder.append(csvField(application.getApplicationNumber()));
+            builder.append(",");
+            builder.append(csvField(application.getApartment().getNumber()));
+            builder.append(",");
+            builder.append(csvField(application.getResident().getName()));
+            builder.append(",");
+            builder.append(csvField(application.getResident().getId()));
+            builder.append(",");
+            builder.append(csvField(
+                    application.getDrawResult() == null
+                            ? ""
+                            : application.getDrawResult().name()));
+            builder.append(",");
+            builder.append(csvField(application.getStatus().name()));
+            builder.append(",");
+            builder.append(csvField(application.getDrawPosition()));
+            builder.append("\n");
+        }
+
+        return builder.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /*
+     * Escapa un campo de CSV según RFC 4180: rodea entre comillas dobles si
+     * contiene coma, comilla o salto de línea, duplicando las comillas
+     * internas.
+     */
+    private String csvField(Object value) {
+
+        if (value == null) {
+            return "";
+        }
+
+        String text = String.valueOf(value);
+
+        if (text.contains(",") || text.contains("\"") || text.contains("\n")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+
+        return text;
+    }
+
+    private <T> ResponseEntity<ApiResponse<T>> error(
+            HttpStatus status,
+            String message,
+            String code,
+            T data
+    ) {
+
+        return ResponseEntity.status(status).body(
+                new ApiResponse<>(message, data, code)
         );
     }
 

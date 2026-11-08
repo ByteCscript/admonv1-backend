@@ -47,6 +47,14 @@ public class SecurityConfig {
                         // H2 Console pública
                         .requestMatchers("/h2-console/**").permitAll()
 
+                        // D4: residentes autenticados pueden ver el resultado
+                        // y la huella de integridad del sorteo (sin acciones admin).
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/calls/*/draw/results",
+                                "/api/calls/*/draw/hash"
+                        ).authenticated()
+
                         // C.U-08: el resumen, el resultado y la auditoría del sorteo
                         // exponen datos de todos los participantes; solo ADMIN.
                         .requestMatchers(

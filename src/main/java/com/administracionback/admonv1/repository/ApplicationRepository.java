@@ -41,10 +41,23 @@ public interface ApplicationRepository extends JpaRepository<Application, Long>,
             ApplicationStatus status
     );
 
-    /* CU 1.1.2: resultado ya sorteado. */
+    /* CU 1.1.2: resultado ya sorteado, orden estable por id. */
     List<Application> findByCallIdAndDrawResultIsNotNullOrderByIdAsc(
             Long callId
     );
+
+    /* CU 1.1.2 / D4: filas del resultado del sorteo con torre y residente,
+       ordenadas por posición de sorteo. */
+    @Query("""
+            select a from Application a
+            left join fetch a.apartment ap
+            left join fetch ap.tower
+            left join fetch a.resident u
+            where a.call.id = :callId
+            and a.drawResult is not null
+            order by a.drawPosition asc nulls last, a.id asc
+            """)
+    List<Application> findByCallIdWithDrawResult(@Param("callId") Long callId);
 
     /* C.U-08: resumen previo al sorteo, solicitudes por estado. */
     @Query("""

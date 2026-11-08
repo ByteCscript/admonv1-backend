@@ -10,4 +10,7 @@ public interface CallDrawRepository extends JpaRepository<CallDraw, Long> {
     boolean existsByCallId(Long callId);
 
     Optional<CallDraw> findByCallId(Long callId);
+
+    /* D3: sorteo más reciente de una convocatoria (para referenciar la huella). */
+    Optional<CallDraw> findFirstByCallIdOrderByIdDesc(Long callId);
 }

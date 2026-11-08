@@ -41,6 +41,14 @@ public class Application {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    /*
+     * Posición asignada por el sorteo de cupos (C.U-08, RN-20), empezando
+     * en 1. Es null mientras la convocatoria no se haya sorteado o si la
+     * solicitud no participó (solo participan las APPROVED, RN-17).
+     */
+    @Column
+    private Integer drawPosition;
+
     @OneToMany(
             mappedBy = "application",
             cascade = CascadeType.ALL

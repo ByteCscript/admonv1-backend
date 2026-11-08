@@ -47,6 +47,14 @@ public class SecurityConfig {
                         // H2 Console pública
                         .requestMatchers("/h2-console/**").permitAll()
 
+                        // C.U-08: el resumen, el resultado y la auditoría del sorteo
+                        // exponen datos de todos los participantes; solo ADMIN.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/calls/*/draw",
+                                "/api/calls/*/draw/**"
+                        ).hasRole("ADMIN")
+
                         // RN-06: solo ADMIN escribe convocatorias (antes de anyRequest).
                         .requestMatchers(
                                 HttpMethod.POST,

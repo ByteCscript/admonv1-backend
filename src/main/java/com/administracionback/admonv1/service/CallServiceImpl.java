@@ -6,7 +6,9 @@ import com.administracionback.admonv1.dto.CallDTO;
 import com.administracionback.admonv1.dto.CallRequestDTO;
 import com.administracionback.admonv1.model.Call;
 import com.administracionback.admonv1.model.CallStatus;
+import com.administracionback.admonv1.model.CallStatusPolicy;
 import com.administracionback.admonv1.repository.ApplicationRepository;
+import com.administracionback.admonv1.repository.CallDrawRepository;
 import com.administracionback.admonv1.repository.CallRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -29,6 +31,7 @@ public class CallServiceImpl implements ICallService {
 
     private final CallRepository callRepository;
     private final ApplicationRepository applicationRepository;
+    private final CallDrawRepository callDrawRepository;
 
     @Override
     @Transactional
@@ -121,6 +124,12 @@ public class CallServiceImpl implements ICallService {
                     "CALL_NOT_FOUND");
         }
 
+        ResponseEntity<ApiResponse<CallDTO>> drawn = rejectIfDrawn(call);
+
+        if (drawn != null) {
+            return drawn;
+        }
+
         if (call.isClosedManually()) {
             return error(HttpStatus.CONFLICT,
                     "La convocatoria está cerrada y no puede modificarse",
@@ -206,6 +215,12 @@ public class CallServiceImpl implements ICallService {
                     "CALL_NOT_FOUND");
         }
 
+        ResponseEntity<ApiResponse<CallDTO>> drawn = rejectIfDrawn(call);
+
+        if (drawn != null) {
+            return drawn;
+        }
+
         if (!call.isClosedManually()) {
             return error(HttpStatus.CONFLICT,
                     "La convocatoria no está cerrada",
@@ -282,17 +297,20 @@ public class CallServiceImpl implements ICallService {
      * re-grabando `status` como caché del estado derivado.
      */
     private CallStatus deriveStatus(Call call) {
-        LocalDate today = LocalDate.now(COLOMBIA_ZONE);
+        return CallStatusPolicy.derive(call);
+    }
 
-        if (call.isClosedManually() || today.isAfter(call.getEndDate())) {
-            return CallStatus.CLOSED;
+    /*
+     * RN-19 (C.U-08): una convocatoria sorteada no se puede modificar ni
+     * reabrir, porque cambiaría las condiciones de un sorteo definitivo.
+     */
+    private ResponseEntity<ApiResponse<CallDTO>> rejectIfDrawn(Call call) {
+        if (callDrawRepository.existsByCallId(call.getId())) {
+            return error(HttpStatus.CONFLICT,
+                    "La convocatoria ya fue sorteada y no puede modificarse ni reabrirse",
+                    "DRAW_ALREADY_EXECUTED");
         }
-
-        if (today.isBefore(call.getStartDate())) {
-            return CallStatus.SCHEDULED;
-        }
-
-        return CallStatus.OPEN;
+        return null;
     }
 
     /*
@@ -360,7 +378,8 @@ public class CallServiceImpl implements ICallService {
                 call.getEndDate(),
                 call.getAvailableSlots(),
                 derived.name(),
-                call.isClosedManually()
+                call.isClosedManually(),
+                callDrawRepository.existsByCallId(call.getId())
         );
     }
 

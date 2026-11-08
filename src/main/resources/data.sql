@@ -137,9 +137,95 @@ VALUES (
            'OPEN'
        );
 
--- Los ids 1-3 se insertaron a mano: se reinicia el identity de calls
+-- =========================================================
+-- C.U-08 · DATOS DE PRUEBA DEL SORTEO DE CUPOS
+-- =========================================================
+-- Mientras el C.U-07 (aceptar solicitud) no esté terminado, ninguna
+-- solicitud llega a APPROVED desde la aplicación. Estos datos permiten
+-- probar el sorteo de punta a punta:
+--   * Convocatoria 4, cerrada por fecha, con 3 cupos.
+--   * 21 solicitudes APPROVED (relación 1 cupo por 7, SUP-02): participan.
+--   * 2 REGISTERED y 1 REJECTED: no participan; las REGISTERED disparan la
+--     advertencia de FA-01.
+-- Residentes residente1@test.com ... residente24@test.com (clave 123456),
+-- en los apartamentos 102 a 125. Retirar cuando el C.U-07 esté listo.
+
+INSERT INTO calls (
+    id,
+    title,
+    description,
+    start_date,
+    end_date,
+    available_slots,
+    status,
+    closed_manually
+)
+VALUES (
+           4,
+           'Convocatoria Parqueadero Comunal - Prueba de sorteo',
+           'Convocatoria cerrada con solicitudes aprobadas para probar el sorteo de cupos (C.U-08)',
+           '2026-09-01',
+           '2026-09-30',
+           3,
+           'CLOSED',
+           FALSE
+       );
+
+INSERT INTO users (
+    id,
+    email,
+    password,
+    name,
+    enabled,
+    apartment_id
+)
+SELECT
+    X + 2,
+    'residente' || X || '@test.com',
+    '$2y$10$FOnAuAc6RbshJevn.hT.HuiRqqtdWzqt4CxsEfVUFM48/CVdQRtuS',
+    'Residente Apartamento ' || (101 + X),
+    TRUE,
+    X + 1
+FROM SYSTEM_RANGE(1, 24);
+
+INSERT INTO user_roles (
+    user_id,
+    role_id
+)
+SELECT
+    X + 2,
+    2
+FROM SYSTEM_RANGE(1, 24);
+
+INSERT INTO applications (
+    id,
+    application_number,
+    resident_id,
+    apartment_id,
+    call_id,
+    status,
+    created_at
+)
+SELECT
+    X,
+    'POST-SORTEO-' || LPAD(CAST(X AS VARCHAR), 3, '0'),
+    X + 2,
+    X + 1,
+    4,
+    CASE
+        WHEN X <= 21 THEN 'APPROVED'
+        WHEN X <= 23 THEN 'REGISTERED'
+        ELSE 'REJECTED'
+    END,
+    DATEADD('MINUTE', X, TIMESTAMP '2026-09-10 08:00:00')
+FROM SYSTEM_RANGE(1, 24);
+
+ALTER TABLE users ALTER COLUMN id RESTART WITH 27;
+ALTER TABLE applications ALTER COLUMN id RESTART WITH 25;
+
+-- Los ids 1-4 se insertaron a mano: se reinicia el identity de calls
 -- para que una convocatoria creada por la API no choque con ellos.
-ALTER TABLE calls ALTER COLUMN id RESTART WITH 4;
+ALTER TABLE calls ALTER COLUMN id RESTART WITH 5;
 
 
 

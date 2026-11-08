@@ -2,6 +2,7 @@ package com.administracionback.admonv1.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -44,4 +45,12 @@ public class User {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "apartment_id")
     private Apartment apartment;
+
+    /*
+     * Usuario sintético del entorno de simulación masiva (CU 1.1.2).
+     * Se preinscribe automáticamente en cada convocatoria nueva.
+     */
+    @Column(nullable = false)
+    @ColumnDefault("false")
+    private boolean simulated;
 }

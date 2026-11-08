@@ -77,6 +77,14 @@ public class SecurityConfig {
                                 "/api/calls/**"
                         ).hasRole("ADMIN")
 
+                        // RN-11: solo ADMIN revisa postulaciones (CU 1.2.4).
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/applications/*/accept",
+                                "/api/applications/*/reject"
+                        ).hasRole("ADMIN")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
                         .anyRequest().authenticated()
                 )
                 .headers(headers ->

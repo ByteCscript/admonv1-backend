@@ -127,7 +127,7 @@ public class DrawTransactions {
         draw.setCall(call);
         draw.setExecutedAt(LocalDateTime.now(CallStatusPolicy.COLOMBIA_ZONE));
         draw.setExecutedBy(executedBy);
-        draw.setAvailableSlots(call.getAvailableSlots());
+        draw.setAvailableSlotsBefore(call.getAvailableSlots());
         draw.setParticipantsCount(order.size());
         draw.setAlgorithm(DrawAlgorithm.NAME);
         draw.setSeed(DrawAlgorithm.toHex(seed));
@@ -200,7 +200,7 @@ public class DrawTransactions {
 
     private DrawResultDTO toResult(Call call, CallDraw draw, List<Application> ordered) {
 
-        int slots = draw.getAvailableSlots();
+        int slots = draw.getAvailableSlotsBefore();
 
         List<DrawEntryDTO> entries = ordered.stream()
                 .map(application -> toEntry(application, slots))

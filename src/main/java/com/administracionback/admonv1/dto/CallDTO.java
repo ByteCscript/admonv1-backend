@@ -1,6 +1,7 @@
 package com.administracionback.admonv1.dto;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /*
  * drawExecuted (C.U-08): true si la convocatoria ya fue sorteada; en ese
@@ -14,5 +15,7 @@ public record CallDTO(Long id,
                       Integer availableSlots,
                       String status,
                       boolean closedManually,
-                      boolean drawExecuted) {
+                      boolean drawExecuted,
+                      boolean drawn,
+                      LocalDateTime drawnAt) {
 }

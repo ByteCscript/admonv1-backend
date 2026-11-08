@@ -1,6 +1,7 @@
 package com.administracionback.admonv1.controller;
 
 import com.administracionback.admonv1.dto.*;
+import com.administracionback.admonv1.service.IAdminApplicationService;
 import com.administracionback.admonv1.service.IApplicationService;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 public class ApplicationController {
 
     private final IApplicationService applicationService;
+    private final IAdminApplicationService adminApplicationService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<ApplicationResponseDTO>> createApplication(
@@ -54,6 +56,35 @@ public class ApplicationController {
         return applicationService.cancelApplication(
                 applicationId,
                 email
+        );
+    }
+
+    /*
+     * CU 1.2.4 (RN-11): solo ROLE_ADMIN llega aquí (SecurityConfig).
+     */
+    @PatchMapping("/{applicationId}/accept")
+    public ResponseEntity<ApiResponse<AdminApplicationResponseDTO>> acceptApplication(
+            @PathVariable Long applicationId,
+            Authentication authentication) {
+
+        return adminApplicationService.acceptApplication(
+                applicationId,
+                authentication.getName()
+        );
+    }
+
+    @PatchMapping("/{applicationId}/reject")
+    public ResponseEntity<ApiResponse<AdminApplicationResponseDTO>> rejectApplication(
+            @PathVariable Long applicationId,
+            @RequestBody(required = false) ApplicationRejectRequestDTO request,
+            Authentication authentication) {
+
+        String reason = request == null ? null : request.reason();
+
+        return adminApplicationService.rejectApplication(
+                applicationId,
+                reason,
+                authentication.getName()
         );
     }
 

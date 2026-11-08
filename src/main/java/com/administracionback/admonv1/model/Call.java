@@ -6,6 +6,7 @@ import lombok.Setter;
 import org.hibernate.annotations.ColumnDefault;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "calls")
@@ -43,4 +44,14 @@ public class Call {
     @Column(nullable = false)
     @ColumnDefault("false")
     private boolean closedManually;
+
+    /*
+     * Auditoría del sorteo (CU 1.1.2, RN-17).
+     * Si lotteryExecutedAt != null el sorteo ya fue ejecutado y no puede repetirse.
+     * El status derivado pasa a LOTTERY_DONE.
+     */
+    @Column(length = 120)
+    private String lotteryExecutedBy;
+
+    private LocalDateTime lotteryExecutedAt;
 }

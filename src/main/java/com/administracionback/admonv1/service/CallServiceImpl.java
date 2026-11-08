@@ -1,15 +1,17 @@
 package com.administracionback.admonv1.service;
 
-
 import com.administracionback.admonv1.dto.ApiResponse;
 import com.administracionback.admonv1.dto.CallDTO;
 import com.administracionback.admonv1.dto.CallRequestDTO;
+import com.administracionback.admonv1.model.ApplicationStatus;
 import com.administracionback.admonv1.model.Call;
+import com.administracionback.admonv1.model.CallDraw;
 import com.administracionback.admonv1.model.CallStatus;
 import com.administracionback.admonv1.model.CallStatusPolicy;
 import com.administracionback.admonv1.repository.ApplicationRepository;
 import com.administracionback.admonv1.repository.CallDrawRepository;
 import com.administracionback.admonv1.repository.CallRepository;
+import com.administracionback.admonv1.service.SimulationEnrollmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +35,7 @@ public class CallServiceImpl implements ICallService {
     private final CallRepository callRepository;
     private final ApplicationRepository applicationRepository;
     private final CallDrawRepository callDrawRepository;
+    private final SimulationEnrollmentService simulationEnrollmentService;
 
     @Override
     @Transactional
@@ -72,7 +76,7 @@ public class CallServiceImpl implements ICallService {
                 .orElseGet(() -> ResponseEntity
                         .status(HttpStatus.NOT_FOUND)
                         .body(new ApiResponse<>(
-                                "No se encontró la convocatoria",
+                                "No se encontr\u00f3 la convocatoria",
                                 null,
                                 "CALL_NOT_FOUND")));
     }
@@ -82,7 +86,7 @@ public class CallServiceImpl implements ICallService {
     public ResponseEntity<ApiResponse<CallDTO>> createCall(CallRequestDTO request) {
 
         ResponseEntity<ApiResponse<CallDTO>> invalid =
-                validateRequest(request, true);
+                validateRequest(request, true, null);
 
         if (invalid != null) {
             return invalid;
@@ -95,6 +99,9 @@ public class CallServiceImpl implements ICallService {
         call.setStatus(deriveStatus(call));
 
         Call saved = callRepository.save(call);
+
+        // CU 1.1.2: la simulaci\u00f3n masiva se preinscribe en cada convocatoria nueva.
+        simulationEnrollmentService.enrollSimulated(saved);
 
         return ResponseEntity.ok(
                 new ApiResponse<>(
@@ -120,7 +127,7 @@ public class CallServiceImpl implements ICallService {
 
         if (call == null) {
             return error(HttpStatus.NOT_FOUND,
-                    "No se encontró la convocatoria",
+                    "No se encontr\u00f3 la convocatoria",
                     "CALL_NOT_FOUND");
         }
 
@@ -132,15 +139,54 @@ public class CallServiceImpl implements ICallService {
 
         if (call.isClosedManually()) {
             return error(HttpStatus.CONFLICT,
-                    "La convocatoria está cerrada y no puede modificarse",
+                    "La convocatoria est\u00e1 cerrada y no puede modificarse",
                     "CALL_CLOSED");
         }
 
         ResponseEntity<ApiResponse<CallDTO>> invalid =
-                validateRequest(request, false);
+                validateRequest(request, false, call.getAvailableSlots());
 
         if (invalid != null) {
             return invalid;
+        }
+
+        /*
+         * RN-22: una convocatoria sorteada solo admite cambios que no alteren
+         * cupos ni el estado derivado (p. ej. corregir el t\u00edtulo).
+         */
+        boolean isDrawn = callDrawRepository.existsByCallId(call.getId());
+
+        if (isDrawn
+                && (!Objects.equals(request.availableSlots(),
+                        call.getAvailableSlots())
+                || deriveStatus(call.isClosedManually(),
+                        request.startDate(),
+                        request.endDate()) != CallStatus.CLOSED)) {
+
+            return error(HttpStatus.CONFLICT,
+                    "La convocatoria ya fue sorteada: no se pueden cambiar cupos ni reabrir su per\u00edodo",
+                    "CALL_ALREADY_DRAWN");
+        }
+
+        /*
+         * Q2 (CU 1.2.4): los cupos restantes nunca pueden quedar por debajo
+         * de las postulaciones ya aprobadas. Tras el sorteo los cupos ya
+         * reflejan a las aprobadas (0), as\u00ed que la regla no aplica.
+         */
+        if (!isDrawn) {
+
+            long approvedApplications = applicationRepository
+                    .countByCallIdAndStatus(
+                            call.getId(),
+                            ApplicationStatus.APPROVED
+                    );
+
+            if (request.availableSlots() < approvedApplications) {
+
+                return error(HttpStatus.CONFLICT,
+                        "Los cupos disponibles no pueden ser menores a las postulaciones aprobadas",
+                        "CALL_SLOTS_BELOW_APPROVED");
+            }
         }
 
         applyRequest(call, request);
@@ -172,13 +218,13 @@ public class CallServiceImpl implements ICallService {
 
         if (call == null) {
             return error(HttpStatus.NOT_FOUND,
-                    "No se encontró la convocatoria",
+                    "No se encontr\u00f3 la convocatoria",
                     "CALL_NOT_FOUND");
         }
 
         if (call.isClosedManually()) {
             return error(HttpStatus.CONFLICT,
-                    "La convocatoria ya está cerrada",
+                    "La convocatoria ya est\u00e1 cerrada",
                     "CALL_ALREADY_CLOSED");
         }
 
@@ -211,7 +257,7 @@ public class CallServiceImpl implements ICallService {
 
         if (call == null) {
             return error(HttpStatus.NOT_FOUND,
-                    "No se encontró la convocatoria",
+                    "No se encontr\u00f3 la convocatoria",
                     "CALL_NOT_FOUND");
         }
 
@@ -223,7 +269,7 @@ public class CallServiceImpl implements ICallService {
 
         if (!call.isClosedManually()) {
             return error(HttpStatus.CONFLICT,
-                    "La convocatoria no está cerrada",
+                    "La convocatoria no est\u00e1 cerrada",
                     "CALL_NOT_CLOSED");
         }
 
@@ -256,7 +302,7 @@ public class CallServiceImpl implements ICallService {
 
         if (call == null) {
             return error(HttpStatus.NOT_FOUND,
-                    "No se encontró la convocatoria",
+                    "No se encontr\u00f3 la convocatoria",
                     "CALL_NOT_FOUND");
         }
 
@@ -285,24 +331,50 @@ public class CallServiceImpl implements ICallService {
     private ResponseEntity<ApiResponse<CallDTO>> validateCallId(Long callId) {
         if (callId == null || callId <= 0) {
             return error(HttpStatus.BAD_REQUEST,
-                    "El identificador de la convocatoria es inválido",
+                    "El identificador de la convocatoria es inv\u00e1lido",
                     "INVALID_CALL_ID");
         }
         return null;
     }
 
     /*
-     * RN-09: única función que decide el estado de una convocatoria.
+     * RN-09: \u00danica funci\u00f3n que decide el estado de una convocatoria.
      * Se usa al leer (mapToDTO) y al escribir (create/update/close/reopen),
-     * re-grabando `status` como caché del estado derivado.
+     * re-grabando `status` como cach\u00e9 del estado derivado.
      */
-    private CallStatus deriveStatus(Call call) {
-        return CallStatusPolicy.derive(call);
+    @Override
+    public CallStatus deriveStatus(Call call) {
+        return deriveStatus(
+                call.isClosedManually(),
+                call.getStartDate(),
+                call.getEndDate()
+        );
+    }
+
+    /*
+     * Sobrecarga pura de RN-09 para validar escenarios sin entidad persistida
+     * (p. ej. un update con fechas nuevas antes de aplicarlas).
+     */
+    public static CallStatus deriveStatus(
+            boolean closedManually,
+            LocalDate startDate,
+            LocalDate endDate) {
+
+        LocalDate today = LocalDate.now(COLOMBIA_ZONE);
+
+        if (closedManually || today.isAfter(endDate)) {
+            return CallStatus.CLOSED;
+        }
+
+        if (today.isBefore(startDate)) {
+            return CallStatus.SCHEDULED;
+        }
+        return CallStatus.OPEN;
     }
 
     /*
      * RN-19 (C.U-08): una convocatoria sorteada no se puede modificar ni
-     * reabrir, porque cambiaría las condiciones de un sorteo definitivo.
+     * reabrir, porque cambiar\u00eda las condiciones de un sorteo definitivo.
      */
     private ResponseEntity<ApiResponse<CallDTO>> rejectIfDrawn(Call call) {
         if (callDrawRepository.existsByCallId(call.getId())) {
@@ -314,23 +386,25 @@ public class CallServiceImpl implements ICallService {
     }
 
     /*
-     * RN-07: validación manual de título, fechas y cupos (sin jakarta.validation).
+     * RN-07: validaci\u00f3n manual de t\u00edtulo, fechas y cupos (sin jakarta.validation).
      * `checkPastStartDate` solo aplica al crear.
      */
     private ResponseEntity<ApiResponse<CallDTO>> validateRequest(
-            CallRequestDTO request, boolean checkPastStartDate) {
+            CallRequestDTO request,
+            boolean checkPastStartDate,
+            Integer currentSlots) {
 
         if (request == null || request.title() == null
                 || request.title().isBlank()) {
             return error(HttpStatus.BAD_REQUEST,
-                    "El título de la convocatoria es obligatorio",
+                    "El t\u00edtulo de la convocatoria es obligatorio",
                     "CALL_TITLE_REQUIRED");
         }
 
         if (request.startDate() == null || request.endDate() == null
                 || request.startDate().isAfter(request.endDate())) {
             return error(HttpStatus.BAD_REQUEST,
-                    "Las fechas de la convocatoria no son válidas",
+                    "Las fechas de la convocatoria no son v\u00e1lidas",
                     "CALL_INVALID_DATES");
         }
 
@@ -341,7 +415,17 @@ public class CallServiceImpl implements ICallService {
                     "CALL_INVALID_DATES");
         }
 
-        if (request.availableSlots() == null || request.availableSlots() < 1) {
+        /*
+         * RN-07: cupos >= 1 al crear. Al actualizar se tolera el 0 cuando es
+         * el valor ya almacenado (p. ej. una convocatoria sorteada cuyo t\u00edtulo
+         * se corrige).
+         */
+        boolean unchangedZeroSlots = currentSlots != null
+                && currentSlots == 0
+                && Objects.equals(request.availableSlots(), currentSlots);
+
+        if (request.availableSlots() == null
+                || (request.availableSlots() < 1 && !unchangedZeroSlots)) {
             return error(HttpStatus.BAD_REQUEST,
                     "Los cupos disponibles deben ser al menos 1",
                     "CALL_INVALID_SLOTS");
@@ -359,8 +443,8 @@ public class CallServiceImpl implements ICallService {
     }
 
     /*
-     * Al leer nunca se confía en la columna `status`: se recalcula y, si
-     * difiere de lo almacenado, se re-graba como caché.
+     * Al leer nunca se conf\u00eda en la columna `status`: se recalcula y, si
+     * difiere de lo almacenado, se re-graba como cach\u00e9.
      */
     private CallDTO mapToDTO(Call call) {
         CallStatus derived = deriveStatus(call);
@@ -369,6 +453,11 @@ public class CallServiceImpl implements ICallService {
             call.setStatus(derived);
             callRepository.save(call);
         }
+
+        // Deuda conocida: una consulta por convocatoria (N+1) para drawn/drawnAt.
+        CallDraw draw = callDrawRepository.findByCallId(call.getId()).orElse(null);
+
+        boolean drawExecuted = callDrawRepository.existsByCallId(call.getId());
 
         return new CallDTO(
                 call.getId(),
@@ -379,7 +468,9 @@ public class CallServiceImpl implements ICallService {
                 call.getAvailableSlots(),
                 derived.name(),
                 call.isClosedManually(),
-                callDrawRepository.existsByCallId(call.getId())
+                drawExecuted,
+                draw != null,
+                draw == null ? null : draw.getExecutedAt()
         );
     }
 

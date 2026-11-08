@@ -223,9 +223,15 @@ public class CallServiceImpl implements ICallService {
         }
 
         if (call.isClosedManually()) {
-            return error(HttpStatus.CONFLICT,
-                    "La convocatoria ya est\u00e1 cerrada",
-                    "CALL_ALREADY_CLOSED");
+            // Cierre manual ya aplicado: devolver el estado actual sin error
+            // (cierre idempotente y graceful, RN-08).
+            return ResponseEntity.ok(
+                    new ApiResponse<>(
+                            "La convocatoria ya está cerrada",
+                            mapToDTO(call),
+                            null
+                    )
+            );
         }
 
         call.setClosedManually(true);

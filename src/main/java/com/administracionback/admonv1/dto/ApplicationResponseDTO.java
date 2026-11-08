@@ -14,6 +14,8 @@ public record ApplicationResponseDTO(
         Long towerId,
         String towerName,
         String status,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        Integer drawPosition,
+        Integer waitlistPosition
 ) {
 }

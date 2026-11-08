@@ -498,8 +498,26 @@ public class ApplicationServiceImpl implements IApplicationService {
                 application.getApartment().getTower().getName(),
 
                 application.getStatus().name(),
-                application.getCreatedAt()
+                application.getCreatedAt(),
+
+                application.getDrawPosition(),
+                waitlistPosition(application)
         );
+    }
+
+    /*
+     * C.U-08 (RN-20): posición en la lista de espera de una solicitud
+     * NOT_SELECTED; null si no se sorteó o si quedó con cupo. Los cupos no
+     * cambian después del sorteo (RN-19).
+     */
+    private Integer waitlistPosition(Application application) {
+
+        Integer position = application.getDrawPosition();
+        int slots = application.getCall().getAvailableSlots();
+
+        return position != null && position > slots
+                ? position - slots
+                : null;
     }
 
     private ApplicationDetailResponseDTO mapToDetailDTO(
@@ -528,7 +546,10 @@ public class ApplicationServiceImpl implements IApplicationService {
                 application.getDocuments()
                         .stream()
                         .map(this::mapDocumentToDTO)
-                        .toList()
+                        .toList(),
+
+                application.getDrawPosition(),
+                waitlistPosition(application)
         );
     }
 

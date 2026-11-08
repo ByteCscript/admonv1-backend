@@ -17,6 +17,8 @@ public record ApplicationDetailResponseDTO(
         LocalDate callEndDate,
         String status,
         LocalDateTime createdAt,
-        List<DocumentResponseDTO> documents
+        List<DocumentResponseDTO> documents,
+        Integer drawPosition,
+        Integer waitlistPosition
 ) {
 }

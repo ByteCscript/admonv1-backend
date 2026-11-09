@@ -22,9 +22,13 @@ public enum DrawError {
     DRAW_ALREADY_EXECUTED(HttpStatus.CONFLICT,
             "La convocatoria ya tiene un sorteo ejecutado y el sorteo no se puede repetir"),
 
+    // FE-07, RN-37
+    APPLICATIONS_PENDING_VALIDATION(HttpStatus.CONFLICT,
+            "Hay solicitudes pendientes de validación; revíselas antes de ejecutar el sorteo"),
+
     // FE-04, RN-17
-    INSUFFICIENT_APPROVED_APPLICATIONS(HttpStatus.CONFLICT,
-            "Las solicitudes aprobadas deben superar el número de cupos de la convocatoria"),
+    NO_APPROVED_APPLICATIONS(HttpStatus.CONFLICT,
+            "La convocatoria no tiene solicitudes aprobadas para asignar cupos"),
 
     // Consulta del resultado de una convocatoria sin sorteo.
     DRAW_NOT_FOUND(HttpStatus.NOT_FOUND,

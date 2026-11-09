@@ -244,7 +244,7 @@ def test_create_application_end_to_end():
 
     assert application_id
     assert application["callId"] == call_id
-    assert application["status"] == "REGISTERED"
+    assert application["status"] == "PENDING_VALIDATION"
 
     assert len(document_ids) == 3
 
@@ -264,4 +264,4 @@ def test_create_application_end_to_end():
 
     assert application_detail["id"] == application_id
     assert application_detail["callId"] == call_id
-    assert application_detail["status"] == "REGISTERED"
+    assert application_detail["status"] == "PENDING_VALIDATION"

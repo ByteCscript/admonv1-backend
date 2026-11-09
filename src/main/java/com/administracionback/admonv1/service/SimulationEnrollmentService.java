@@ -20,7 +20,7 @@ import java.util.List;
 /*
  * Entorno de simulación masiva (CU 1.1.2).
  *
- * Cada convocatoria nueva recibe una postulación REGISTERED por cada usuario
+ * Cada convocatoria nueva recibe una postulación PENDING_VALIDATION por cada usuario
  * simulado del seed (500 usuarios). Así el sorteo tiene participantes reales
  * sin depender de cargas manuales.
  *
@@ -73,14 +73,14 @@ public class SimulationEnrollmentService {
             application.setCall(call);
 
             /*
-             * N2/N3: los primeros 5 simulados se quedan REGISTERED (sin revisar);
+             * N2/N3: los primeros 5 simulados se quedan PENDING_VALIDATION (sin revisar);
              * el resto (200) se crea directamente APPROVED con auditoría de simulación.
-             * N5: nunca se toca Call.availableSlots aquí.
+             * N5: nunca se toca Call.totalSlots aquí.
              */
             LocalDateTime createdAt = base.minusSeconds(index);
 
             if (index <= 5) {
-                application.setStatus(ApplicationStatus.REGISTERED);
+                application.setStatus(ApplicationStatus.PENDING_VALIDATION);
                 application.setReviewedBy(null);
                 application.setReviewedAt(null);
             } else {

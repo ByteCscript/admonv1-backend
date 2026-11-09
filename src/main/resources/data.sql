@@ -118,7 +118,7 @@ VALUES
            3,
            FALSE
        ),
-       -- 5 usuarios simulados con postulaciones sin aprobar (REGISTERED)
+       -- 5 usuarios simulados con postulaciones sin aprobar (PENDING_VALIDATION)
        (
            5,
            'sim001@test.com',
@@ -227,7 +227,7 @@ INSERT INTO calls (
     description,
     start_date,
     end_date,
-    available_slots,
+    total_slots,
     status,
     closed_manually
 )
@@ -248,7 +248,7 @@ ALTER TABLE calls ALTER COLUMN id RESTART WITH 2;
 -- APPLICATIONS
 -- =========================================================
 -- 2 postulaciones APPROVED (usuarios residentes 2 y 3)
--- 5 postulaciones REGISTERED (usuarios simulados sin aprobar)
+-- 5 postulaciones PENDING_VALIDATION (usuarios simulados sin aprobar)
 -- residente@test.com (usuario 1) NO tiene postulaciones
 -- RN-01: una sola postulación por (apartamento, convocatoria)
 
@@ -300,7 +300,7 @@ VALUES
            5,
            4,
            1,
-           'REGISTERED',
+           'PENDING_VALIDATION',
            '2026-10-05 09:15:00',
            0,
            NULL,
@@ -314,7 +314,7 @@ VALUES
            6,
            5,
            1,
-           'REGISTERED',
+           'PENDING_VALIDATION',
            '2026-10-05 09:20:00',
            0,
            NULL,
@@ -328,7 +328,7 @@ VALUES
            7,
            6,
            1,
-           'REGISTERED',
+           'PENDING_VALIDATION',
            '2026-10-05 09:25:00',
            0,
            NULL,
@@ -342,7 +342,7 @@ VALUES
            8,
            7,
            1,
-           'REGISTERED',
+           'PENDING_VALIDATION',
            '2026-10-05 09:30:00',
            0,
            NULL,
@@ -356,7 +356,7 @@ VALUES
            9,
            8,
            1,
-           'REGISTERED',
+           'PENDING_VALIDATION',
            '2026-10-05 09:35:00',
            0,
            NULL,
@@ -366,7 +366,7 @@ VALUES
        );
 
 -- POSTULACIONES APPROVED DE LOS 200 SIMULADOS NUEVOS (call 1) (N2)
--- ids 8-207, created_at antes de 2026-10-05 (N9) para que los 5 REGISTERED
+-- ids 8-207, created_at antes de 2026-10-05 (N9) para que los 5 PENDING_VALIDATION
 -- (created_at 2026-10-05) aparezcan primero paginado.
 -- Sin documentos (N2).
 -- =========================================================
@@ -505,5 +505,5 @@ VALUES
 -- - 209 usuarios (1 residente, 1 admin, 2 residentes apoyo, 5 simulados, 200 simulados nuevos)
 -- - residente@test.com (usuario 1): SIN postulaciones
 -- - 202 postulaciones APPROVED (2 residentes + 200 simulados)
--- - 5 postulaciones REGISTERED (usuarios simulados 5-9)
+-- - 5 postulaciones PENDING_VALIDATION (usuarios simulados 5-9)
 -- - Total: 207 postulaciones en la convocatoria 1

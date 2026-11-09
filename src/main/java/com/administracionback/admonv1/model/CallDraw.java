@@ -56,13 +56,13 @@ public class CallDraw {
     @Column(nullable = false, updatable = false)
     private String executedBy;
 
-    /* Cupos de la convocatoria ANTES del sorteo. */
+    /* Cupos de la convocatoria al ejecutar el sorteo. */
     @Column(nullable = false, updatable = false)
-    private Integer availableSlotsBefore;
+    private Integer totalSlots;
 
-    /* Cupos de la convocatoria DESPUÉS del sorteo. */
+    /* Cupos que quedaron sin asignar (hubo menos aprobadas que cupos). */
     @Column(nullable = false, updatable = false)
-    private Integer availableSlotsAfter;
+    private Integer unassignedSlots;
 
     @Column(nullable = false, updatable = false)
     private Integer participantsCount;

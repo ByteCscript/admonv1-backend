@@ -88,22 +88,6 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
 
-        /*
-         * RN-13: sin cupos restantes no se admiten nuevas postulaciones
-         * (decisión Q3 del CU 1.2.4).
-         */
-        if (call.get().getAvailableSlots() == null
-                || call.get().getAvailableSlots() <= 0) {
-
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                    new ApiResponse<>(
-                            "La convocatoria no tiene cupos disponibles",
-                            null,
-                            "CALL_SLOTS_EXHAUSTED"
-                    )
-            );
-        }
-
         var resident = userRepository.findByEmail(email);
 
         if (resident.isEmpty()) {
@@ -135,7 +119,7 @@ public class ApplicationServiceImpl implements IApplicationService {
                         apartment.getId(),
                         call.get().getId(),
                         List.of(
-                                ApplicationStatus.REGISTERED,
+                                ApplicationStatus.PENDING_VALIDATION,
                                 ApplicationStatus.APPROVED
                         )
                 );
@@ -217,7 +201,7 @@ public class ApplicationServiceImpl implements IApplicationService {
         application.setCall(call.get());
         application.setApartment(apartment);
         application.setResident(resident.get());
-        application.setStatus(ApplicationStatus.REGISTERED);
+        application.setStatus(ApplicationStatus.PENDING_VALIDATION);
         application.setCreatedAt(LocalDateTime.now(COLOMBIA_ZONE));
 
         Application savedApplication =
@@ -318,7 +302,7 @@ public class ApplicationServiceImpl implements IApplicationService {
                         apartment.getId(),
                         call.get().getId(),
                         List.of(
-                                ApplicationStatus.REGISTERED,
+                                ApplicationStatus.PENDING_VALIDATION,
                                 ApplicationStatus.APPROVED
                         )
                 );
@@ -466,9 +450,9 @@ public class ApplicationServiceImpl implements IApplicationService {
         }
 
         /*
-         * Solo una postulación REGISTERED puede cancelarse.
+         * Solo una postulación PENDING_VALIDATION puede cancelarse.
          */
-        if (entity.getStatus() != ApplicationStatus.REGISTERED) {
+        if (entity.getStatus() != ApplicationStatus.PENDING_VALIDATION) {
 
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
                     new ApiResponse<>(
@@ -548,7 +532,7 @@ public class ApplicationServiceImpl implements IApplicationService {
     private Integer waitlistPosition(Application application) {
 
         Integer position = application.getDrawPosition();
-        int slots = application.getCall().getAvailableSlots();
+        int slots = application.getCall().getTotalSlots();
 
         return position != null && position > slots
                 ? position - slots

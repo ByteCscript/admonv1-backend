@@ -76,7 +76,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long>,
 
     /*
      * RN-01: una postulación vigente por apartamento y convocatoria.
-     * Se consideran vigentes REGISTERED y APPROVED; CANCELLED/REJECTED liberan
+     * Se consideran vigentes PENDING_VALIDATION y APPROVED; CANCELLED/REJECTED liberan
      * el apartamento para volver a postularse.
      */
     Optional<Application> findFirstByApartmentIdAndCallIdAndStatusInOrderByIdAsc(
@@ -86,10 +86,14 @@ public interface ApplicationRepository extends JpaRepository<Application, Long>,
     );
 
     /*
-     * Lock pesimista usado al aceptar/rechazar (RN-13/RN-14).
-     * Orden de bloqueo fijo en el servicio: Application -> Call.
+     * Lock pesimista usado al aceptar/rechazar.
+     * Orden de bloqueo fijo en el servicio: Call -> Application.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from Application a where a.id = :id")
     Optional<Application> findByIdForUpdate(@Param("id") Long id);
+
+    /* Convocatoria de la postulación, sin cargar la entidad ni bloquearla. */
+    @Query("select a.call.id from Application a where a.id = :id")
+    Optional<Long> findCallIdById(@Param("id") Long id);
 }

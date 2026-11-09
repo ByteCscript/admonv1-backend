@@ -29,13 +29,16 @@ import java.util.List;
  * Reglas de la revisión administrativa de postulaciones (CU 1.2.4).
  *
  * RN-11: solo ROLE_ADMIN (garantizado en SecurityConfig) lista y revisa.
- * RN-12: transiciones válidas REGISTERED->APPROVED, REGISTERED->REJECTED,
+ * RN-12: transiciones válidas PENDING_VALIDATION->APPROVED, PENDING_VALIDATION->REJECTED,
  *        APPROVED->REJECTED (revocación). Cualquier otra -> 409.
- * RN-13: aceptar exige cupo y descuenta 1 (cupos = RESTANTES).
- * RN-14: revocar un APPROVED devuelve 1 cupo; rechazar un REGISTERED no altera.
+ * Aprobar habilita la postulación para el sorteo (C.U-08, RN-17): no asigna
+ * ni consume cupos, por lo que puede haber más aprobadas que cupos. Los cupos
+ * solo se asignan al ejecutar el sorteo.
  * RN-15: auditoría (reviewedBy/reviewedAt/rejectionReason) en la misma transacción.
+ * Tras el sorteo no se admiten cambios de revisión (CALL_ALREADY_DRAWN).
  *
- * Concurrencia: lock pesimista en orden fijo Application -> Call.
+ * Concurrencia: lock pesimista en orden fijo Call -> Application, el mismo
+ * del sorteo (que bloquea la convocatoria antes de leer a sus participantes).
  */
 @Service
 @RequiredArgsConstructor
@@ -177,6 +180,13 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
             );
         }
 
+        Call call = lockCallOf(applicationId);
+
+        if (call == null) {
+
+            return applicationNotFound();
+        }
+
         Application application = applicationRepository
                 .findByIdForUpdate(applicationId)
                 .orElse(null);
@@ -187,21 +197,14 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
         }
 
         /*
-         * RN-12: solo una postulación REGISTERED puede aprobarse
+         * RN-12: solo una postulación PENDING_VALIDATION puede aprobarse
          * (la operación no es idempotente).
          */
-        if (application.getStatus() != ApplicationStatus.REGISTERED) {
+        if (application.getStatus() != ApplicationStatus.PENDING_VALIDATION) {
 
             return invalidState(
                     "La postulación no puede aprobarse en su estado actual"
             );
-        }
-
-        Call call = lockCall(application);
-
-        if (call == null) {
-
-            return callNotFound();
         }
 
         /*
@@ -209,35 +212,10 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
          */
         if (callDrawRepository.existsByCallId(call.getId())) {
 
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                    new ApiResponse<>(
-                            "La convocatoria ya fue sorteada; no admite cambios de revisión",
-                            null,
-                            "CALL_ALREADY_DRAWN"
-                    )
-            );
+            return callAlreadyDrawn();
         }
 
         validateReviewWindow(call);
-
-        Integer availableSlots = call.getAvailableSlots();
-
-        /*
-         * RN-13: no se acepta sin cupo disponible.
-         */
-        if (availableSlots == null || availableSlots <= 0) {
-
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                    new ApiResponse<>(
-                            "La convocatoria no tiene cupos disponibles",
-                            null,
-                            "CALL_SLOTS_EXHAUSTED"
-                    )
-            );
-        }
-
-        call.setAvailableSlots(availableSlots - 1);
-        callRepository.save(call);
 
         application.setStatus(ApplicationStatus.APPROVED);
         application.setReviewedBy(adminEmail);
@@ -279,10 +257,21 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
         }
 
         /*
-         * RN-15: el motivo es opcional, pero nunca mayor a 500 caracteres.
+         * RN-32: el motivo es obligatorio, porque el residente lo consulta
+         * en su solicitud, y tiene máximo 500 caracteres.
          */
-        if (normalizedReason != null
-                && normalizedReason.length() > MAX_REJECTION_REASON_LENGTH) {
+        if (normalizedReason == null) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "El motivo del rechazo es obligatorio",
+                            null,
+                            "REJECTION_REASON_REQUIRED"
+                    )
+            );
+        }
+
+        if (normalizedReason.length() > MAX_REJECTION_REASON_LENGTH) {
 
             return ResponseEntity.badRequest().body(
                     new ApiResponse<>(
@@ -293,6 +282,13 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
                             "REJECTION_REASON_TOO_LONG"
                     )
             );
+        }
+
+        Call call = lockCallOf(applicationId);
+
+        if (call == null) {
+
+            return applicationNotFound();
         }
 
         Application application = applicationRepository
@@ -307,10 +303,10 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
         ApplicationStatus currentStatus = application.getStatus();
 
         /*
-         * RN-12: REGISTERED->REJECTED (rechazo) o
+         * RN-12: PENDING_VALIDATION->REJECTED (rechazo) o
          * APPROVED->REJECTED (revocación, decisión Q1).
          */
-        if (currentStatus != ApplicationStatus.REGISTERED
+        if (currentStatus != ApplicationStatus.PENDING_VALIDATION
                 && currentStatus != ApplicationStatus.APPROVED) {
 
             return invalidState(
@@ -318,28 +314,16 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
             );
         }
 
-        Call call = lockCall(application);
+        /*
+         * El resultado del sorteo es definitivo: ni el rechazo ni la
+         * revocación pueden alterar a sus participantes.
+         */
+        if (callDrawRepository.existsByCallId(call.getId())) {
 
-        if (call == null) {
-
-            return callNotFound();
+            return callAlreadyDrawn();
         }
 
         validateReviewWindow(call);
-
-        /*
-         * RN-14: revocar una postulación aprobada devuelve su cupo.
-         */
-        if (currentStatus == ApplicationStatus.APPROVED) {
-
-            Integer availableSlots = call.getAvailableSlots();
-
-            call.setAvailableSlots(
-                    availableSlots == null ? 1 : availableSlots + 1
-            );
-
-            callRepository.save(call);
-        }
 
         application.setStatus(ApplicationStatus.REJECTED);
         application.setReviewedBy(adminEmail);
@@ -366,11 +350,14 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
     }
 
     /*
-     * Segundo lock del orden fijo Application -> Call (evita deadlocks).
+     * Primer lock del orden fijo Call -> Application (evita deadlocks con el
+     * sorteo). Solo consulta el id de la convocatoria para no cargar la
+     * postulación antes de bloquearla.
      */
-    private Call lockCall(Application application) {
-        return callRepository
-                .findByIdForUpdate(application.getCall().getId())
+    private Call lockCallOf(Long applicationId) {
+        return applicationRepository
+                .findCallIdById(applicationId)
+                .flatMap(callRepository::findByIdForUpdate)
                 .orElse(null);
     }
 
@@ -397,13 +384,13 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
     }
 
     private <T> ResponseEntity<ApiResponse<T>>
-    callNotFound() {
+    callAlreadyDrawn() {
 
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
                 new ApiResponse<>(
-                        "No se encontró la convocatoria",
+                        "La convocatoria ya fue sorteada; no admite cambios de revisión",
                         null,
-                        "CALL_NOT_FOUND"
+                        "CALL_ALREADY_DRAWN"
                 )
         );
     }
@@ -482,7 +469,7 @@ public class AdminApplicationServiceImpl implements IAdminApplicationService {
                 application.getCall().getTitle(),
                 application.getCall().getStartDate(),
                 application.getCall().getEndDate(),
-                application.getCall().getAvailableSlots(),
+                application.getCall().getTotalSlots(),
 
                 application.getStatus().name(),
                 application.getCreatedAt(),

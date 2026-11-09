@@ -21,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -188,8 +190,39 @@ public class AdminDrawServiceImpl implements IAdminDrawService {
         callDraw.setAvailableSlotsAfter(slotsBefore - selected);
         callDraw.setParticipantsCount(participants.size());
         callDraw.setSelectedCount(selected);
+        callDraw.setAlgorithm("RANDOM_SEED");
 
-        CallDraw savedDraw = callDrawRepository.save(callDraw);
+        // Construir inputSnapshot: application_number ordenados alfabéticamente
+        String inputSnapshot = participants.stream()
+                .map(Application::getApplicationNumber)
+                .sorted()
+                .collect(Collectors.joining("\n"));
+
+        // Construir resultSnapshot: application_number ordenados por draw_position
+        String resultSnapshot = participants.stream()
+                .sorted(Comparator.comparingInt(Application::getDrawPosition))
+                .map(Application::getApplicationNumber)
+                .collect(Collectors.joining("\n"));
+
+        // Calcular inputHash: SHA-256 de inputSnapshot
+        String inputHash;
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(inputSnapshot.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hashBuilder = new StringBuilder(hashBytes.length * 2);
+            for (byte b : hashBytes) {
+                hashBuilder.append(String.format("%02x", b));
+            }
+            inputHash = hashBuilder.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 no disponible", e);
+        }
+
+        callDraw.setInputHash(inputHash);
+        callDraw.setInputSnapshot(inputSnapshot);
+        callDraw.setResultSnapshot(resultSnapshot);
+
+        CallDraw savedDraw = callDrawRepository.saveAndFlush(callDraw);
 
         /*
          * D3: huella de integridad del CSV que se exportará. Se genera a

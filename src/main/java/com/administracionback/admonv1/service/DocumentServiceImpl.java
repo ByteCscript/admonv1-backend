@@ -3,6 +3,7 @@ package com.administracionback.admonv1.service;
 import com.administracionback.admonv1.dto.ApiResponse;
 import com.administracionback.admonv1.dto.DocumentPresignedRequestDTO;
 import com.administracionback.admonv1.dto.DocumentPresignedResponseDTO;
+import com.administracionback.admonv1.dto.DocumentReadUrlResponseDTO;
 import com.administracionback.admonv1.dto.DocumentResponseDTO;
 import com.administracionback.admonv1.dto.DocumentTypeResponseDTO;
 import com.administracionback.admonv1.model.Document;
@@ -14,11 +15,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
@@ -42,6 +48,9 @@ public class DocumentServiceImpl implements IDocumentService {
 
     @Value("${aws.s3.presign-duration-minutes}")
     private long presignDurationMinutes;
+
+    @Value("${aws.s3.presign-read-minutes:15}")
+    private long presignReadMinutes;
 
     @Value("${aws.s3.key-prefix}")
     private String keyPrefix;
@@ -221,6 +230,136 @@ public class DocumentServiceImpl implements IDocumentService {
                     )
             );
         }
+    }
+
+    @Override
+    public ResponseEntity<ApiResponse<DocumentReadUrlResponseDTO>> generateReadUrl(
+            Long applicationId,
+            UUID documentId) {
+
+        if (applicationId == null || applicationId <= 0) {
+
+            return ResponseEntity.badRequest().body(
+                    new ApiResponse<>(
+                            "ID de postulación no válido",
+                            null,
+                            "INVALID_APPLICATION_ID"
+                    )
+            );
+        }
+
+        var documentOptional =
+                documentRepository.findById(documentId);
+
+        if (documentOptional.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró el documento",
+                            null,
+                            "DOCUMENT_NOT_FOUND"
+                    )
+            );
+        }
+
+        Document document = documentOptional.get();
+
+        if (document.getApplication() == null
+                || !document.getApplication().getId().equals(applicationId)) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "El documento no pertenece a la postulación",
+                            null,
+                            "DOCUMENT_NOT_IN_APPLICATION"
+                    )
+            );
+        }
+
+        try {
+
+            s3Client.headObject(
+                    HeadObjectRequest.builder()
+                            .bucket(document.getBucket())
+                            .key(document.getS3Key())
+                            .build()
+            );
+
+        } catch (NoSuchKeyException e) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "El archivo no existe en S3",
+                            null,
+                            "FILE_NOT_FOUND_IN_S3"
+                    )
+            );
+
+        } catch (S3Exception e) {
+
+            if (e.statusCode() == 404) {
+
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                        new ApiResponse<>(
+                                "El archivo no existe en S3",
+                                null,
+                                "FILE_NOT_FOUND_IN_S3"
+                        )
+                );
+            }
+
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ApiResponse<>(
+                            "Almacenamiento no disponible, intente más tarde",
+                            null,
+                            "STORAGE_UNAVAILABLE"
+                    )
+            );
+
+        } catch (SdkClientException e) {
+
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    new ApiResponse<>(
+                            "Almacenamiento no disponible, intente más tarde",
+                            null,
+                            "STORAGE_UNAVAILABLE"
+                    )
+            );
+        }
+
+        GetObjectPresignRequest presignRequest =
+                GetObjectPresignRequest.builder()
+                        .signatureDuration(
+                                Duration.ofMinutes(
+                                        presignReadMinutes))
+                        .getObjectRequest(
+                                GetObjectRequest.builder()
+                                        .bucket(document.getBucket())
+                                        .key(document.getS3Key())
+                                        .responseContentDisposition(
+                                                "inline; filename=\""
+                                                        + document.getOriginalName()
+                                                        + "\"")
+                                        .build())
+                        .build();
+
+        PresignedGetObjectRequest presigned =
+                s3Presigner.presignGetObject(presignRequest);
+
+        DocumentReadUrlResponseDTO response =
+                new DocumentReadUrlResponseDTO(
+                        documentId,
+                        presigned.url().toString(),
+                        presignReadMinutes
+                );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        "URL de lectura generada correctamente",
+                        response,
+                        null
+                )
+        );
     }
 
     @Override

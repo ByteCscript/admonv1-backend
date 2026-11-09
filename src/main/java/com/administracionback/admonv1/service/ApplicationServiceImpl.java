@@ -3,6 +3,7 @@ package com.administracionback.admonv1.service;
 import com.administracionback.admonv1.dto.*;
 import com.administracionback.admonv1.model.Application;
 import com.administracionback.admonv1.model.ApplicationStatus;
+import com.administracionback.admonv1.model.CallStatus;
 import com.administracionback.admonv1.model.Document;
 import com.administracionback.admonv1.model.DocumentStatus;
 import com.administracionback.admonv1.model.DocumentType;
@@ -61,16 +62,44 @@ public class ApplicationServiceImpl implements IApplicationService {
         }
 
         /*
-         * RN-10: la convocatoria cerrada manualmente por Administración
-         * no admite nuevas postulaciones.
+         * RN-09 / RN-10: el estado derivado de la convocatoria (fechas +
+         * cierre manual, zona America/Bogota) decide si admite postulaciones.
+         * Si el derivado ≠ OPEN → 409 CALL_CLOSED (coherente con cierre manual).
          */
-        if (call.get().isClosedManually()) {
+        CallStatus derivedStatus;
+        LocalDate today = LocalDate.now(COLOMBIA_ZONE);
+
+        if (call.get().isClosedManually() || today.isAfter(call.get().getEndDate())) {
+            derivedStatus = CallStatus.CLOSED;
+        } else if (today.isBefore(call.get().getStartDate())) {
+            derivedStatus = CallStatus.SCHEDULED;
+        } else {
+            derivedStatus = CallStatus.OPEN;
+        }
+
+        if (derivedStatus != CallStatus.OPEN) {
 
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
                     new ApiResponse<>(
                             "La convocatoria está cerrada y no admite nuevas postulaciones",
                             null,
                             "CALL_CLOSED"
+                    )
+            );
+        }
+
+        /*
+         * RN-13: sin cupos restantes no se admiten nuevas postulaciones
+         * (decisión Q3 del CU 1.2.4).
+         */
+        if (call.get().getAvailableSlots() == null
+                || call.get().getAvailableSlots() <= 0) {
+
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    new ApiResponse<>(
+                            "La convocatoria no tiene cupos disponibles",
+                            null,
+                            "CALL_SLOTS_EXHAUSTED"
                     )
             );
         }
@@ -102,10 +131,13 @@ public class ApplicationServiceImpl implements IApplicationService {
         }
 
         var applicationOptional = applicationRepository
-                .findByApartmentIdAndCallIdAndStatus(
+                .findFirstByApartmentIdAndCallIdAndStatusInOrderByIdAsc(
                         apartment.getId(),
                         call.get().getId(),
-                        ApplicationStatus.REGISTERED
+                        List.of(
+                                ApplicationStatus.REGISTERED,
+                                ApplicationStatus.APPROVED
+                        )
                 );
 
         if (applicationOptional.isPresent()) {
@@ -282,10 +314,13 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
         var existingApplication =
-                applicationRepository.findByApartmentIdAndCallIdAndStatus(
+                applicationRepository.findFirstByApartmentIdAndCallIdAndStatusInOrderByIdAsc(
                         apartment.getId(),
                         call.get().getId(),
-                        ApplicationStatus.REGISTERED
+                        List.of(
+                                ApplicationStatus.REGISTERED,
+                                ApplicationStatus.APPROVED
+                        )
                 );
 
 
@@ -498,8 +533,26 @@ public class ApplicationServiceImpl implements IApplicationService {
                 application.getApartment().getTower().getName(),
 
                 application.getStatus().name(),
-                application.getCreatedAt()
+                application.getCreatedAt(),
+
+                application.getDrawPosition(),
+                waitlistPosition(application)
         );
+    }
+
+    /*
+     * C.U-08 (RN-20): posición en la lista de espera de una solicitud
+     * NOT_SELECTED; null si no se sorteó o si quedó con cupo. Los cupos no
+     * cambian después del sorteo (RN-19).
+     */
+    private Integer waitlistPosition(Application application) {
+
+        Integer position = application.getDrawPosition();
+        int slots = application.getCall().getAvailableSlots();
+
+        return position != null && position > slots
+                ? position - slots
+                : null;
     }
 
     private ApplicationDetailResponseDTO mapToDetailDTO(
@@ -525,10 +578,20 @@ public class ApplicationServiceImpl implements IApplicationService {
                 application.getStatus().name(),
                 application.getCreatedAt(),
 
+                application.getReviewedAt(),
+                application.getRejectionReason(),
+
+                application.getDrawResult() == null
+                        ? null
+                        : application.getDrawResult().name(),
+
                 application.getDocuments()
                         .stream()
                         .map(this::mapDocumentToDTO)
-                        .toList()
+                        .toList(),
+
+                application.getDrawPosition(),
+                waitlistPosition(application)
         );
     }
 

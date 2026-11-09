@@ -47,6 +47,22 @@ public class SecurityConfig {
                         // H2 Console pública
                         .requestMatchers("/h2-console/**").permitAll()
 
+                        // D4: residentes autenticados pueden ver el resultado
+                        // y la huella de integridad del sorteo (sin acciones admin).
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/calls/*/draw/results",
+                                "/api/calls/*/draw/hash"
+                        ).authenticated()
+
+                        // C.U-08: el resumen, el resultado y la auditoría del sorteo
+                        // exponen datos de todos los participantes; solo ADMIN.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/calls/*/draw",
+                                "/api/calls/*/draw/**"
+                        ).hasRole("ADMIN")
+
                         // RN-06: solo ADMIN escribe convocatorias (antes de anyRequest).
                         .requestMatchers(
                                 HttpMethod.POST,
@@ -68,6 +84,14 @@ public class SecurityConfig {
                                 "/api/calls",
                                 "/api/calls/**"
                         ).hasRole("ADMIN")
+
+                        // RN-11: solo ADMIN revisa postulaciones (CU 1.2.4).
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/applications/*/accept",
+                                "/api/applications/*/reject"
+                        ).hasRole("ADMIN")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
                         .anyRequest().authenticated()
                 )

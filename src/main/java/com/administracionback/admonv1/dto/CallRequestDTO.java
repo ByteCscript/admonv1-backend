@@ -10,5 +10,5 @@ public record CallRequestDTO(String title,
                              String description,
                              LocalDate startDate,
                              LocalDate endDate,
-                             Integer availableSlots) {
+                             Integer totalSlots) {
 }

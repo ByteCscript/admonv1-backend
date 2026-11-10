@@ -3,7 +3,6 @@ package com.administracionback.admonv1.service;
 import com.administracionback.admonv1.dto.ApiResponse;
 import com.administracionback.admonv1.dto.CallDTO;
 import com.administracionback.admonv1.dto.CallRequestDTO;
-import com.administracionback.admonv1.model.ApplicationStatus;
 import com.administracionback.admonv1.model.Call;
 import com.administracionback.admonv1.model.CallDraw;
 import com.administracionback.admonv1.model.CallStatus;
@@ -21,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -86,7 +84,7 @@ public class CallServiceImpl implements ICallService {
     public ResponseEntity<ApiResponse<CallDTO>> createCall(CallRequestDTO request) {
 
         ResponseEntity<ApiResponse<CallDTO>> invalid =
-                validateRequest(request, true, null);
+                validateRequest(request, true);
 
         if (invalid != null) {
             return invalid;
@@ -131,6 +129,10 @@ public class CallServiceImpl implements ICallService {
                     "CALL_NOT_FOUND");
         }
 
+        /*
+         * RN-19 / D-13: una convocatoria sorteada queda bloqueada por completo;
+         * no admite ninguna edici\u00f3n, ni siquiera del t\u00edtulo.
+         */
         ResponseEntity<ApiResponse<CallDTO>> drawn = rejectIfDrawn(call);
 
         if (drawn != null) {
@@ -144,49 +146,10 @@ public class CallServiceImpl implements ICallService {
         }
 
         ResponseEntity<ApiResponse<CallDTO>> invalid =
-                validateRequest(request, false, call.getAvailableSlots());
+                validateRequest(request, false);
 
         if (invalid != null) {
             return invalid;
-        }
-
-        /*
-         * RN-22: una convocatoria sorteada solo admite cambios que no alteren
-         * cupos ni el estado derivado (p. ej. corregir el t\u00edtulo).
-         */
-        boolean isDrawn = callDrawRepository.existsByCallId(call.getId());
-
-        if (isDrawn
-                && (!Objects.equals(request.availableSlots(),
-                        call.getAvailableSlots())
-                || deriveStatus(call.isClosedManually(),
-                        request.startDate(),
-                        request.endDate()) != CallStatus.CLOSED)) {
-
-            return error(HttpStatus.CONFLICT,
-                    "La convocatoria ya fue sorteada: no se pueden cambiar cupos ni reabrir su per\u00edodo",
-                    "CALL_ALREADY_DRAWN");
-        }
-
-        /*
-         * Q2 (CU 1.2.4): los cupos restantes nunca pueden quedar por debajo
-         * de las postulaciones ya aprobadas. Tras el sorteo los cupos ya
-         * reflejan a las aprobadas (0), as\u00ed que la regla no aplica.
-         */
-        if (!isDrawn) {
-
-            long approvedApplications = applicationRepository
-                    .countByCallIdAndStatus(
-                            call.getId(),
-                            ApplicationStatus.APPROVED
-                    );
-
-            if (request.availableSlots() < approvedApplications) {
-
-                return error(HttpStatus.CONFLICT,
-                        "Los cupos disponibles no pueden ser menores a las postulaciones aprobadas",
-                        "CALL_SLOTS_BELOW_APPROVED");
-            }
         }
 
         applyRequest(call, request);
@@ -220,6 +183,14 @@ public class CallServiceImpl implements ICallService {
             return error(HttpStatus.NOT_FOUND,
                     "No se encontr\u00f3 la convocatoria",
                     "CALL_NOT_FOUND");
+        }
+
+        // D-13: una convocatoria sorteada no admite cambios, tampoco el cierre
+        // manual (si se cerró por fecha, marcarla cambiaría el registro).
+        ResponseEntity<ApiResponse<CallDTO>> drawn = rejectIfDrawn(call);
+
+        if (drawn != null) {
+            return drawn;
         }
 
         if (call.isClosedManually()) {
@@ -385,7 +356,7 @@ public class CallServiceImpl implements ICallService {
     private ResponseEntity<ApiResponse<CallDTO>> rejectIfDrawn(Call call) {
         if (callDrawRepository.existsByCallId(call.getId())) {
             return error(HttpStatus.CONFLICT,
-                    "La convocatoria ya fue sorteada y no puede modificarse ni reabrirse",
+                    "La convocatoria ya fue sorteada y no puede modificarse, cerrarse ni reabrirse",
                     "DRAW_ALREADY_EXECUTED");
         }
         return null;
@@ -397,8 +368,7 @@ public class CallServiceImpl implements ICallService {
      */
     private ResponseEntity<ApiResponse<CallDTO>> validateRequest(
             CallRequestDTO request,
-            boolean checkPastStartDate,
-            Integer currentSlots) {
+            boolean checkPastStartDate) {
 
         if (request == null || request.title() == null
                 || request.title().isBlank()) {
@@ -421,19 +391,10 @@ public class CallServiceImpl implements ICallService {
                     "CALL_INVALID_DATES");
         }
 
-        /*
-         * RN-07: cupos >= 1 al crear. Al actualizar se tolera el 0 cuando es
-         * el valor ya almacenado (p. ej. una convocatoria sorteada cuyo t\u00edtulo
-         * se corrige).
-         */
-        boolean unchangedZeroSlots = currentSlots != null
-                && currentSlots == 0
-                && Objects.equals(request.availableSlots(), currentSlots);
-
-        if (request.availableSlots() == null
-                || (request.availableSlots() < 1 && !unchangedZeroSlots)) {
+        // RN-07: cupos >= 1. Son los que se asignan en el sorteo y no cambian.
+        if (request.totalSlots() == null || request.totalSlots() < 1) {
             return error(HttpStatus.BAD_REQUEST,
-                    "Los cupos disponibles deben ser al menos 1",
+                    "Los cupos deben ser al menos 1",
                     "CALL_INVALID_SLOTS");
         }
 
@@ -445,7 +406,7 @@ public class CallServiceImpl implements ICallService {
         call.setDescription(request.description());
         call.setStartDate(request.startDate());
         call.setEndDate(request.endDate());
-        call.setAvailableSlots(request.availableSlots());
+        call.setTotalSlots(request.totalSlots());
     }
 
     /*
@@ -471,7 +432,7 @@ public class CallServiceImpl implements ICallService {
                 call.getDescription(),
                 call.getStartDate(),
                 call.getEndDate(),
-                call.getAvailableSlots(),
+                call.getTotalSlots(),
                 derived.name(),
                 call.isClosedManually(),
                 drawExecuted,

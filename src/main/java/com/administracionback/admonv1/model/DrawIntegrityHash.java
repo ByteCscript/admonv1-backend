@@ -24,7 +24,7 @@ public class DrawIntegrityHash {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "call_id", nullable = false)
+    @Column(name = "call_id", nullable = false, unique = true)
     private Long callId;
 
     @Column(name = "draw_id", nullable = false)

@@ -15,6 +15,8 @@ public record ApplicationDetailResponseDTO(
         String callTitle,
         LocalDate callStartDate,
         LocalDate callEndDate,
+        // Estado derivado de la convocatoria (fechas + cierre manual, RN-25).
+        String callStatus,
         String status,
         LocalDateTime createdAt,
         LocalDateTime reviewedAt,

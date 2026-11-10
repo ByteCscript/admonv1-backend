@@ -28,6 +28,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /*
@@ -39,7 +40,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * en producción. Crea su propia convocatoria y descarta el contexto al
  * terminar para no afectar a otras pruebas.
  */
-@SpringBootTest(properties = "jwt.secret=" + DrawIntegrationTest.TEST_JWT_SECRET)
+@SpringBootTest(properties = {
+        "jwt.secret=" + DrawIntegrationTest.TEST_JWT_SECRET,
+        DrawIntegrationTest.TEST_DATA
+})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class DrawConcurrencyTest {
 
@@ -102,29 +106,69 @@ class DrawConcurrencyTest {
         }
     }
 
+    /*
+     * Una aprobación en curso tiene el lock de la convocatoria: el sorteo la
+     * espera y la incluye entre los participantes.
+     */
+    @Test
+    void drawWaitsForAnApprovalInProgressAndIncludesIt() throws Exception {
+        Long callId = transactionTemplate.execute(status -> createClosedCallWithApprovedApplications());
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+
+        Future<Integer> draw = transactionTemplate.execute(status -> {
+            Call call = callRepository.findByIdForUpdate(callId).orElseThrow();
+
+            Future<Integer> pending = pool.submit(() ->
+                    drawService.executeDraw(callId, "admin@test.com").getStatusCode().value());
+
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+
+            assertFalse(pending.isDone(), "El sorteo debe esperar el lock de la convocatoria");
+
+            addApprovedApplication(call);
+
+            return pending;
+        });
+
+        assertEquals(201, draw.get(30, TimeUnit.SECONDS));
+        pool.shutdown();
+
+        assertEquals(PARTICIPANTS + 1, applicationRepository
+                .findByCallIdAndDrawPositionIsNotNullOrderByDrawPositionAsc(callId).size());
+    }
+
     private Long createClosedCallWithApprovedApplications() {
         Call call = new Call();
         call.setTitle("Convocatoria de prueba de concurrencia");
         call.setDescription("C.U-08 FE-03");
         call.setStartDate(LocalDate.of(2026, 1, 1));
         call.setEndDate(LocalDate.of(2026, 1, 31));
-        call.setAvailableSlots(SLOTS);
+        call.setTotalSlots(SLOTS);
         call.setStatus(CallStatus.CLOSED);
         callRepository.save(call);
 
-        User resident = userRepository.findByEmail("residente1@test.com").orElseThrow();
-
         for (int i = 0; i < PARTICIPANTS; i++) {
-            Application application = new Application();
-            application.setApplicationNumber("POST-" + UUID.randomUUID());
-            application.setResident(resident);
-            application.setApartment(resident.getApartment());
-            application.setCall(call);
-            application.setStatus(ApplicationStatus.APPROVED);
-            application.setCreatedAt(LocalDateTime.now());
-            applicationRepository.save(application);
+            addApprovedApplication(call);
         }
 
         return call.getId();
+    }
+
+    private void addApprovedApplication(Call call) {
+        User resident = userRepository.findByEmail("residente1@test.com").orElseThrow();
+
+        Application application = new Application();
+        application.setApplicationNumber("POST-" + UUID.randomUUID());
+        application.setResident(resident);
+        application.setApartment(resident.getApartment());
+        application.setCall(call);
+        application.setStatus(ApplicationStatus.APPROVED);
+        application.setCreatedAt(LocalDateTime.now());
+        applicationRepository.save(application);
     }
 }

@@ -24,6 +24,8 @@ public interface ApplicationRepository extends JpaRepository<Application, Long>,
 
     long countByCallId(Long callId);
 
+    boolean existsByApplicationNumber(String applicationNumber);
+
     long countByCallIdAndStatus(
             Long callId,
             ApplicationStatus status

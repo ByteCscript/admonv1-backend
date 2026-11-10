@@ -14,8 +14,15 @@ public interface IAdminDrawService {
     /* D5: exporta el CSV del sorteo (solo ROLE_ADMIN). */
     ResponseEntity<ApiResponse<byte[]>> exportDrawCsv(Long callId);
 
-    /* D4: resultado del sorteo visible para residentes autenticados. */
-    ResponseEntity<ApiResponse<DrawResultsDTO>> getDrawResults(Long callId);
+    /*
+     * D4 / R-11: resultado del sorteo. El administrador recibe todas las filas;
+     * cualquier otro usuario, solo las de sus propias solicitudes.
+     */
+    ResponseEntity<ApiResponse<DrawResultsDTO>> getDrawResults(
+            Long callId,
+            String viewerEmail,
+            boolean viewerIsAdmin
+    );
 
     /* D4: huella de integridad visible para residentes autenticados. */
     ResponseEntity<ApiResponse<IntegrityHashDTO>> getIntegrityHash(Long callId);

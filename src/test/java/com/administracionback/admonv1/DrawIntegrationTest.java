@@ -329,9 +329,33 @@ class DrawIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("DRAW_ALREADY_EXECUTED"));
 
+        // D-13: tampoco se admite corregir solo el título (mismas fechas y cupos).
+        String current = asAdmin(get("/api/calls/{id}", DRAW_CALL))
+                .andReturn().getResponse().getContentAsString();
+        String titleOnly = """
+                {"title":"Título corregido","description":"x","startDate":"%s",
+                 "endDate":"%s","totalSlots":%d}
+                """.formatted(
+                JsonPath.<String>read(current, "$.data.startDate"),
+                JsonPath.<String>read(current, "$.data.endDate"),
+                JsonPath.<Integer>read(current, "$.data.totalSlots"));
+
+        asAdmin(put("/api/calls/{id}", DRAW_CALL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(titleOnly))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("DRAW_ALREADY_EXECUTED"));
+
+        // D-13: ni volver a cerrarla.
+        asAdmin(patch("/api/calls/{id}/close", DRAW_CALL))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("DRAW_ALREADY_EXECUTED"));
+
         asAdmin(get("/api/calls/{id}", DRAW_CALL))
                 .andExpect(jsonPath("$.data.drawExecuted").value(true))
-                .andExpect(jsonPath("$.data.status").value("CLOSED"));
+                .andExpect(jsonPath("$.data.status").value("CLOSED"))
+                .andExpect(jsonPath("$.data.title").value(
+                        JsonPath.<String>read(current, "$.data.title")));
     }
 
     // ---------- Postcondición 5: el residente ve su resultado ----------
@@ -439,6 +463,49 @@ class DrawIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"));
     }
 
+    // C.U-06 (RN-28): el cierre manual bloquea los cambios en las solicitudes
+    // ya registradas, aunque la convocatoria siga dentro de sus fechas.
+    @Test
+    void manualCloseBlocksCancellation() throws Exception {
+        String documentIds = Arrays.stream(DocumentType.values())
+                .filter(DocumentType::isRequired)
+                .map(type -> "\"" + uploadedDocument(type) + "\"")
+                .collect(Collectors.joining(","));
+
+        String body = asResident(post("/api/applications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"callId\":" + OPEN_CALL + ",\"documentIds\":[" + documentIds + "]}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        Integer applicationId = JsonPath.read(body, "$.data.id");
+
+        asAdmin(patch("/api/calls/{id}/close", OPEN_CALL)).andExpect(status().isOk());
+
+        asResident(get("/api/applications/{id}", applicationId))
+                .andExpect(jsonPath("$.data.callStatus").value("CLOSED"));
+
+        asResident(patch("/api/applications/{id}/cancel", applicationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("APPLICATION_PERIOD_CLOSED"));
+    }
+
+    // C.U-03 (RN-39): el número de solicitud es legible y consecutivo por convocatoria.
+    @Test
+    void newApplicationGetsSequentialNumber() throws Exception {
+        String documentIds = Arrays.stream(DocumentType.values())
+                .filter(DocumentType::isRequired)
+                .map(type -> "\"" + uploadedDocument(type) + "\"")
+                .collect(Collectors.joining(","));
+
+        asResident(post("/api/applications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"callId\":" + OPEN_CALL + ",\"documentIds\":[" + documentIds + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicationNumber").value(
+                        org.hamcrest.Matchers.matchesPattern("POS-" + OPEN_CALL + "-\\d{4,}")));
+    }
+
     @Test
     void drawIsBlockedUntilAllApplicationsAreReviewed() throws Exception {
         Application pending = pendingApplication();
@@ -498,8 +565,8 @@ class DrawIntegrationTest {
     void resultsHashAndCsvComeFromTheExecutedDraw() throws Exception {
         asAdmin(post("/api/calls/{id}/draw", DRAW_CALL)).andExpect(status().isCreated());
 
-        String results = mockMvc.perform(get("/api/calls/{id}/draw/results", DRAW_CALL)
-                        .header("Authorization", "Bearer " + residentToken))
+        // El administrador ve a todos los participantes.
+        String results = asAdmin(get("/api/calls/{id}/draw/results", DRAW_CALL))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.results", hasSize(21)))
                 .andExpect(jsonPath("$.data.results[0].drawPosition").value(1))
@@ -510,6 +577,14 @@ class DrawIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
 
         String hash = JsonPath.read(results, "$.data.integrityHash.hashValue");
+
+        // R-11: el residente solo ve su propia solicitud (la 1), con la misma huella.
+        mockMvc.perform(get("/api/calls/{id}/draw/results", DRAW_CALL)
+                        .header("Authorization", "Bearer " + residentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.results", hasSize(1)))
+                .andExpect(jsonPath("$.data.results[0].applicationId").value(1))
+                .andExpect(jsonPath("$.data.integrityHash.hashValue").value(hash));
 
         byte[] firstExport = exportCsv();
         byte[] secondExport = exportCsv();

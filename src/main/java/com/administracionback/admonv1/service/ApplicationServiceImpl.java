@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -54,7 +53,13 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
 
-        var call = callRepository.findById(request.callId());
+        /*
+         * Lock pesimista de la convocatoria (orden fijo Call -> Application):
+         * serializa las creaciones de la misma convocatoria para que el
+         * consecutivo del número de postulación no se repita y para que dos
+         * envíos simultáneos del mismo apartamento no pasen ambos RN-01.
+         */
+        var call = callRepository.findByIdForUpdate(request.callId());
 
         if (call.isEmpty()) {
 
@@ -196,7 +201,9 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
 
-        application.setApplicationNumber(String.valueOf(UUID.randomUUID()));
+        application.setApplicationNumber(
+                nextApplicationNumber(call.get().getId())
+        );
 
         application.setCall(call.get());
         application.setApartment(apartment);
@@ -346,7 +353,25 @@ public class ApplicationServiceImpl implements IApplicationService {
 
 
     @Override
-    public ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>> getApplications(ApplicationFilterDTO filters, int page, int size, String sortBy, String direction) {
+    public ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>> getApplications(String email, int page, int size, String sortBy, String direction) {
+
+        var user = email == null
+                ? java.util.Optional.<com.administracionback.admonv1.model.User>empty()
+                : userRepository.findByEmail(email);
+
+        if (user.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró el usuario autenticado",
+                            null,
+                            "USER_NOT_FOUND"
+                    )
+            );
+        }
+
+        ApplicationFilterDTO filters =
+                new ApplicationFilterDTO(user.get().getId());
 
         Sort.Direction sortDirection =
                 Sort.Direction.fromString(direction);
@@ -466,16 +491,19 @@ public class ApplicationServiceImpl implements IApplicationService {
         var call = entity.getCall();
 
         /*
-         * Validación de fechas de la convocatoria.
+         * RN-28: solo se cancela mientras la convocatoria está abierta. El
+         * estado derivado considera las fechas y el cierre manual: una
+         * convocatoria cerrada manualmente bloquea los cambios en las
+         * solicitudes ya registradas (decisión del equipo, 2026-11-09).
          */
-        LocalDate today = LocalDate.now(COLOMBIA_ZONE);
-
-        if (today.isBefore(call.getStartDate())
-                || today.isAfter(call.getEndDate())) {
+        if (CallServiceImpl.deriveStatus(
+                call.isClosedManually(),
+                call.getStartDate(),
+                call.getEndDate()) != CallStatus.OPEN) {
 
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
                     new ApiResponse<>(
-                            "La postulación solo puede cancelarse durante las fechas de la convocatoria",
+                            "La postulación solo puede cancelarse mientras la convocatoria está abierta",
                             null,
                             "APPLICATION_PERIOD_CLOSED"
                     )
@@ -494,6 +522,35 @@ public class ApplicationServiceImpl implements IApplicationService {
                         null
                 )
         );
+    }
+
+    /*
+     * Número de postulación legible y secuencial por convocatoria:
+     * POS-{convocatoria}-{consecutivo}, p. ej. POS-1-0208.
+     *
+     * Debe llamarse con el lock de la convocatoria tomado (createApplication),
+     * así el conteo y el insert son atómicos frente a otras creaciones. Las
+     * postulaciones nunca se borran (se cancelan/rechazan), por lo que el
+     * conteo solo crece. Si un número ya existe (p. ej. datos semilla), se
+     * avanza al siguiente libre.
+     */
+    private String nextApplicationNumber(Long callId) {
+
+        long consecutive = applicationRepository.countByCallId(callId) + 1;
+
+        String number = formatApplicationNumber(callId, consecutive);
+
+        while (applicationRepository.existsByApplicationNumber(number)) {
+            consecutive++;
+            number = formatApplicationNumber(callId, consecutive);
+        }
+
+        return number;
+    }
+
+    private static String formatApplicationNumber(Long callId, long consecutive) {
+
+        return String.format("POS-%d-%04d", callId, consecutive);
     }
 
     private ApplicationResponseDTO mapToDTO(
@@ -558,6 +615,11 @@ public class ApplicationServiceImpl implements IApplicationService {
 
                 application.getCall().getStartDate(),
                 application.getCall().getEndDate(),
+                CallServiceImpl.deriveStatus(
+                        application.getCall().isClosedManually(),
+                        application.getCall().getStartDate(),
+                        application.getCall().getEndDate()
+                ).name(),
 
                 application.getStatus().name(),
                 application.getCreatedAt(),

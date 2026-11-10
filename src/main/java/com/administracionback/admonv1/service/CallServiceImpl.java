@@ -20,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -130,6 +129,10 @@ public class CallServiceImpl implements ICallService {
                     "CALL_NOT_FOUND");
         }
 
+        /*
+         * RN-19 / D-13: una convocatoria sorteada queda bloqueada por completo;
+         * no admite ninguna edici\u00f3n, ni siquiera del t\u00edtulo.
+         */
         ResponseEntity<ApiResponse<CallDTO>> drawn = rejectIfDrawn(call);
 
         if (drawn != null) {
@@ -147,24 +150,6 @@ public class CallServiceImpl implements ICallService {
 
         if (invalid != null) {
             return invalid;
-        }
-
-        /*
-         * RN-22: una convocatoria sorteada solo admite cambios que no alteren
-         * cupos ni el estado derivado (p. ej. corregir el t\u00edtulo).
-         */
-        boolean isDrawn = callDrawRepository.existsByCallId(call.getId());
-
-        if (isDrawn
-                && (!Objects.equals(request.totalSlots(),
-                        call.getTotalSlots())
-                || deriveStatus(call.isClosedManually(),
-                        request.startDate(),
-                        request.endDate()) != CallStatus.CLOSED)) {
-
-            return error(HttpStatus.CONFLICT,
-                    "La convocatoria ya fue sorteada: no se pueden cambiar cupos ni reabrir su per\u00edodo",
-                    "CALL_ALREADY_DRAWN");
         }
 
         applyRequest(call, request);
@@ -198,6 +183,14 @@ public class CallServiceImpl implements ICallService {
             return error(HttpStatus.NOT_FOUND,
                     "No se encontr\u00f3 la convocatoria",
                     "CALL_NOT_FOUND");
+        }
+
+        // D-13: una convocatoria sorteada no admite cambios, tampoco el cierre
+        // manual (si se cerró por fecha, marcarla cambiaría el registro).
+        ResponseEntity<ApiResponse<CallDTO>> drawn = rejectIfDrawn(call);
+
+        if (drawn != null) {
+            return drawn;
         }
 
         if (call.isClosedManually()) {
@@ -363,7 +356,7 @@ public class CallServiceImpl implements ICallService {
     private ResponseEntity<ApiResponse<CallDTO>> rejectIfDrawn(Call call) {
         if (callDrawRepository.existsByCallId(call.getId())) {
             return error(HttpStatus.CONFLICT,
-                    "La convocatoria ya fue sorteada y no puede modificarse ni reabrirse",
+                    "La convocatoria ya fue sorteada y no puede modificarse, cerrarse ni reabrirse",
                     "DRAW_ALREADY_EXECUTED");
         }
         return null;

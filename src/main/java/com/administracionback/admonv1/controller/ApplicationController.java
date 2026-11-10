@@ -88,12 +88,15 @@ public class ApplicationController {
         );
     }
 
+    /*
+     * "Mis postulaciones": siempre se limita al usuario autenticado (token).
+     * El panel de Administración usa /api/admin/applications.
+     */
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>>
     getApplications(
 
-            @RequestParam(required = false)
-            Long residentId,
+            Authentication authentication,
 
             @RequestParam(defaultValue = "0")
             int page,
@@ -108,11 +111,8 @@ public class ApplicationController {
             String direction
     ) {
 
-        ApplicationFilterDTO filters =
-                new ApplicationFilterDTO(residentId);
-
         return applicationService.getApplications(
-                filters,
+                authentication.getName(),
                 page,
                 size,
                 sortBy,

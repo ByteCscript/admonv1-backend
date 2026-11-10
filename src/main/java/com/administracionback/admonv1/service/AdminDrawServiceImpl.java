@@ -36,7 +36,9 @@ public class AdminDrawServiceImpl implements IAdminDrawService {
     @Override
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<DrawResultsDTO>> getDrawResults(
-            Long callId
+            Long callId,
+            String viewerEmail,
+            boolean viewerIsAdmin
     ) {
 
         ResponseEntity<ApiResponse<DrawResultsDTO>> invalid =
@@ -46,9 +48,17 @@ public class AdminDrawServiceImpl implements IAdminDrawService {
             return invalid;
         }
 
+        /*
+         * R-11 (decisión del equipo, 2026-11-09): el administrador ve a todos
+         * los participantes; el residente solo ve sus propias solicitudes.
+         */
         List<DrawResultRowDTO> rows = applicationRepository
                 .findByCallIdWithDrawResult(callId)
                 .stream()
+                .filter(application -> viewerIsAdmin
+                        || (viewerEmail != null
+                        && viewerEmail.equalsIgnoreCase(
+                                application.getResident().getEmail())))
                 .map(this::mapToRow)
                 .toList();
 

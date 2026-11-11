@@ -24,7 +24,7 @@ public record AdminApplicationDetailResponseDTO(
         String callTitle,
         LocalDate callStartDate,
         LocalDate callEndDate,
-        Integer callAvailableSlots,
+        Integer callTotalSlots,
         String status,
         LocalDateTime createdAt,
         String reviewedBy,

@@ -9,20 +9,20 @@ import com.administracionback.admonv1.model.Call;
 import com.administracionback.admonv1.model.CallDraw;
 import com.administracionback.admonv1.model.CallStatus;
 import com.administracionback.admonv1.model.CallStatusPolicy;
+import com.administracionback.admonv1.model.DrawResult;
 import com.administracionback.admonv1.repository.ApplicationRepository;
 import com.administracionback.admonv1.repository.CallDrawRepository;
 import com.administracionback.admonv1.repository.CallRepository;
+import com.administracionback.admonv1.service.IDrawIntegrityHashService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -37,17 +37,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DrawTransactions {
 
-    /* Estados que aún no se han validado: no participan (FA-01). */
-    private static final Set<ApplicationStatus> UNVALIDATED =
-            EnumSet.of(ApplicationStatus.REGISTERED, ApplicationStatus.PENDING_VALIDATION);
-
     private final SecureRandom secureRandom = new SecureRandom();
 
     private final CallRepository callRepository;
     private final ApplicationRepository applicationRepository;
     private final CallDrawRepository callDrawRepository;
+    private final IDrawIntegrityHashService integrityHashService;
 
-    /* Paso 2 y FA-01: resumen previo al sorteo. */
+    /* Paso 2: resumen previo al sorteo. */
     @Transactional(readOnly = true)
     public DrawPreviewDTO preview(Long callId) {
 
@@ -64,24 +61,25 @@ public class DrawTransactions {
 
             if (count.getStatus() == ApplicationStatus.APPROVED) {
                 approved = count.getTotal();
-            } else if (UNVALIDATED.contains(count.getStatus())) {
-                unvalidated += count.getTotal();
+            } else if (count.getStatus() == ApplicationStatus.PENDING_VALIDATION) {
+                unvalidated = count.getTotal();
             }
         }
 
-        DrawError blocking = blockingError(call, approved);
+        DrawError blocking = blockingError(call, approved, unvalidated);
 
         return new DrawPreviewDTO(
                 call.getId(),
                 call.getTitle(),
                 CallStatusPolicy.derive(call).name(),
-                call.getAvailableSlots(),
+                call.getTotalSlots(),
                 approved,
                 unvalidated,
                 byStatus,
                 callDrawRepository.existsByCallId(callId),
                 blocking == null,
-                blocking == null ? null : blocking.name()
+                blocking == null ? null : blocking.name(),
+                isDirectAssignment(approved, call.getTotalSlots())
         );
     }
 
@@ -89,19 +87,18 @@ public class DrawTransactions {
     @Transactional
     public DrawResultDTO execute(Long callId, String executedBy) {
 
-        Call call = findCall(callId);
+        // El lock va antes de leer a los participantes: una aprobación o un
+        // rechazo en curso termina primero y queda reflejado en la lista.
+        Call call = callRepository.findByIdForUpdate(callId)
+                .orElseThrow(() -> new DrawException(DrawError.CALL_NOT_FOUND));
 
         List<Application> approved = applicationRepository
                 .findByCallIdAndStatus(callId, ApplicationStatus.APPROVED);
 
-        DrawError blocking = blockingError(call, approved.size());
+        long unvalidated = applicationRepository.countByCallIdAndStatus(
+                callId, ApplicationStatus.PENDING_VALIDATION);
 
-        if (blocking == DrawError.INSUFFICIENT_APPROVED_APPLICATIONS) {
-            throw new DrawException(blocking, String.format(
-                    "Hay %d solicitudes aprobadas y la convocatoria tiene %d cupos; "
-                            + "las solicitudes aprobadas deben superar el número de cupos",
-                    approved.size(), call.getAvailableSlots()));
-        }
+        DrawError blocking = blockingError(call, approved.size(), unvalidated);
 
         if (blocking != null) {
             throw new DrawException(blocking);
@@ -123,12 +120,17 @@ public class DrawTransactions {
         // Paso 11: el registro va primero; si otro administrador ya registró
         // un sorteo para la convocatoria, la restricción única falla aquí y
         // no se modifica ninguna solicitud (FE-03).
+        int slots = call.getTotalSlots();
+        int selectedCount = Math.min(slots, order.size());
+
         CallDraw draw = new CallDraw();
         draw.setCall(call);
         draw.setExecutedAt(LocalDateTime.now(CallStatusPolicy.COLOMBIA_ZONE));
         draw.setExecutedBy(executedBy);
-        draw.setAvailableSlotsBefore(call.getAvailableSlots());
+        draw.setTotalSlots(slots);
+        draw.setUnassignedSlots(slots - selectedCount);
         draw.setParticipantsCount(order.size());
+        draw.setSelectedCount(selectedCount);
         draw.setAlgorithm(DrawAlgorithm.NAME);
         draw.setSeed(DrawAlgorithm.toHex(seed));
         draw.setInputHash(DrawAlgorithm.sha256Hex(inputSnapshot));
@@ -138,21 +140,28 @@ public class DrawTransactions {
         callDrawRepository.saveAndFlush(draw);
 
         // Paso 10: posiciones y estados (RN-20).
-        int slots = call.getAvailableSlots();
         List<Application> ordered = order.stream().map(byNumber::get).toList();
 
         for (int i = 0; i < ordered.size(); i++) {
             Application application = ordered.get(i);
+            boolean selected = i < slots;
+
             application.setDrawPosition(i + 1);
-            application.setStatus(i < slots
+            application.setStatus(selected
                     ? ApplicationStatus.SELECTED
                     : ApplicationStatus.NOT_SELECTED);
+            application.setDrawResult(selected
+                    ? DrawResult.SELECTED
+                    : DrawResult.NOT_SELECTED);
         }
 
         // RN-19: el cierre queda definitivo; además impide nuevas solicitudes
         // (RN-29), porque la convocatoria pasa a estar cerrada manualmente.
         call.setClosedManually(true);
         call.setStatus(CallStatus.CLOSED);
+
+        // Huella del CSV: se fija una sola vez, en la misma transacción.
+        integrityHashService.generateAndSaveHash(callId, DrawCsv.build(ordered));
 
         return toResult(call, draw, ordered);
     }
@@ -179,9 +188,11 @@ public class DrawTransactions {
 
     /*
      * Mismo orden de validación que los flujos de excepción: cerrada (RN-18),
-     * sin sorteo previo (RN-19) y más aprobadas que cupos (RN-17).
+     * sin sorteo previo (RN-19), sin solicitudes por revisar (RN-37) y al menos
+     * una aprobada (RN-17). Un registro definitivo sin participantes cerraría
+     * la convocatoria sin asignar nada.
      */
-    private DrawError blockingError(Call call, long approvedCount) {
+    private DrawError blockingError(Call call, long approvedCount, long unvalidatedCount) {
 
         if (CallStatusPolicy.derive(call) != CallStatus.CLOSED) {
             return DrawError.CALL_NOT_CLOSED;
@@ -191,16 +202,28 @@ public class DrawTransactions {
             return DrawError.DRAW_ALREADY_EXECUTED;
         }
 
-        if (approvedCount <= call.getAvailableSlots()) {
-            return DrawError.INSUFFICIENT_APPROVED_APPLICATIONS;
+        if (unvalidatedCount > 0) {
+            return DrawError.APPLICATIONS_PENDING_VALIDATION;
+        }
+
+        if (approvedCount == 0) {
+            return DrawError.NO_APPROVED_APPLICATIONS;
         }
 
         return null;
     }
 
+    /*
+     * RN-17: si los cupos alcanzan para todas las aprobadas no hay competencia
+     * y todas quedan asignadas. Se usa el mismo flujo y la misma auditoría.
+     */
+    private boolean isDirectAssignment(long participants, int slots) {
+        return participants > 0 && participants <= slots;
+    }
+
     private DrawResultDTO toResult(Call call, CallDraw draw, List<Application> ordered) {
 
-        int slots = draw.getAvailableSlotsBefore();
+        int slots = draw.getTotalSlots();
 
         List<DrawEntryDTO> entries = ordered.stream()
                 .map(application -> toEntry(application, slots))
@@ -224,6 +247,7 @@ public class DrawTransactions {
                 draw.getInputHash(),
                 DrawAlgorithm.deserialize(draw.getInputSnapshot()),
                 verify(draw, ordered),
+                isDirectAssignment(draw.getParticipantsCount(), slots),
                 entries
         );
     }

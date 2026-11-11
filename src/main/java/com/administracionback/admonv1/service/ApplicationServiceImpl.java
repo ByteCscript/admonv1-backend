@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -54,7 +53,13 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
 
-        var call = callRepository.findById(request.callId());
+        /*
+         * Lock pesimista de la convocatoria (orden fijo Call -> Application):
+         * serializa las creaciones de la misma convocatoria para que el
+         * consecutivo del número de postulación no se repita y para que dos
+         * envíos simultáneos del mismo apartamento no pasen ambos RN-01.
+         */
+        var call = callRepository.findByIdForUpdate(request.callId());
 
         if (call.isEmpty()) {
 
@@ -84,22 +89,6 @@ public class ApplicationServiceImpl implements IApplicationService {
                             "La convocatoria está cerrada y no admite nuevas postulaciones",
                             null,
                             "CALL_CLOSED"
-                    )
-            );
-        }
-
-        /*
-         * RN-13: sin cupos restantes no se admiten nuevas postulaciones
-         * (decisión Q3 del CU 1.2.4).
-         */
-        if (call.get().getAvailableSlots() == null
-                || call.get().getAvailableSlots() <= 0) {
-
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                    new ApiResponse<>(
-                            "La convocatoria no tiene cupos disponibles",
-                            null,
-                            "CALL_SLOTS_EXHAUSTED"
                     )
             );
         }
@@ -135,7 +124,7 @@ public class ApplicationServiceImpl implements IApplicationService {
                         apartment.getId(),
                         call.get().getId(),
                         List.of(
-                                ApplicationStatus.REGISTERED,
+                                ApplicationStatus.PENDING_VALIDATION,
                                 ApplicationStatus.APPROVED
                         )
                 );
@@ -212,12 +201,14 @@ public class ApplicationServiceImpl implements IApplicationService {
             );
         }
 
-        application.setApplicationNumber(String.valueOf(UUID.randomUUID()));
+        application.setApplicationNumber(
+                nextApplicationNumber(call.get().getId())
+        );
 
         application.setCall(call.get());
         application.setApartment(apartment);
         application.setResident(resident.get());
-        application.setStatus(ApplicationStatus.REGISTERED);
+        application.setStatus(ApplicationStatus.PENDING_VALIDATION);
         application.setCreatedAt(LocalDateTime.now(COLOMBIA_ZONE));
 
         Application savedApplication =
@@ -318,7 +309,7 @@ public class ApplicationServiceImpl implements IApplicationService {
                         apartment.getId(),
                         call.get().getId(),
                         List.of(
-                                ApplicationStatus.REGISTERED,
+                                ApplicationStatus.PENDING_VALIDATION,
                                 ApplicationStatus.APPROVED
                         )
                 );
@@ -362,7 +353,25 @@ public class ApplicationServiceImpl implements IApplicationService {
 
 
     @Override
-    public ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>> getApplications(ApplicationFilterDTO filters, int page, int size, String sortBy, String direction) {
+    public ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>> getApplications(String email, int page, int size, String sortBy, String direction) {
+
+        var user = email == null
+                ? java.util.Optional.<com.administracionback.admonv1.model.User>empty()
+                : userRepository.findByEmail(email);
+
+        if (user.isEmpty()) {
+
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ApiResponse<>(
+                            "No se encontró el usuario autenticado",
+                            null,
+                            "USER_NOT_FOUND"
+                    )
+            );
+        }
+
+        ApplicationFilterDTO filters =
+                new ApplicationFilterDTO(user.get().getId());
 
         Sort.Direction sortDirection =
                 Sort.Direction.fromString(direction);
@@ -466,9 +475,9 @@ public class ApplicationServiceImpl implements IApplicationService {
         }
 
         /*
-         * Solo una postulación REGISTERED puede cancelarse.
+         * Solo una postulación PENDING_VALIDATION puede cancelarse.
          */
-        if (entity.getStatus() != ApplicationStatus.REGISTERED) {
+        if (entity.getStatus() != ApplicationStatus.PENDING_VALIDATION) {
 
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
                     new ApiResponse<>(
@@ -482,16 +491,19 @@ public class ApplicationServiceImpl implements IApplicationService {
         var call = entity.getCall();
 
         /*
-         * Validación de fechas de la convocatoria.
+         * RN-28: solo se cancela mientras la convocatoria está abierta. El
+         * estado derivado considera las fechas y el cierre manual: una
+         * convocatoria cerrada manualmente bloquea los cambios en las
+         * solicitudes ya registradas (decisión del equipo, 2026-11-09).
          */
-        LocalDate today = LocalDate.now(COLOMBIA_ZONE);
-
-        if (today.isBefore(call.getStartDate())
-                || today.isAfter(call.getEndDate())) {
+        if (CallServiceImpl.deriveStatus(
+                call.isClosedManually(),
+                call.getStartDate(),
+                call.getEndDate()) != CallStatus.OPEN) {
 
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
                     new ApiResponse<>(
-                            "La postulación solo puede cancelarse durante las fechas de la convocatoria",
+                            "La postulación solo puede cancelarse mientras la convocatoria está abierta",
                             null,
                             "APPLICATION_PERIOD_CLOSED"
                     )
@@ -510,6 +522,35 @@ public class ApplicationServiceImpl implements IApplicationService {
                         null
                 )
         );
+    }
+
+    /*
+     * Número de postulación legible y secuencial por convocatoria:
+     * POS-{convocatoria}-{consecutivo}, p. ej. POS-1-0208.
+     *
+     * Debe llamarse con el lock de la convocatoria tomado (createApplication),
+     * así el conteo y el insert son atómicos frente a otras creaciones. Las
+     * postulaciones nunca se borran (se cancelan/rechazan), por lo que el
+     * conteo solo crece. Si un número ya existe (p. ej. datos semilla), se
+     * avanza al siguiente libre.
+     */
+    private String nextApplicationNumber(Long callId) {
+
+        long consecutive = applicationRepository.countByCallId(callId) + 1;
+
+        String number = formatApplicationNumber(callId, consecutive);
+
+        while (applicationRepository.existsByApplicationNumber(number)) {
+            consecutive++;
+            number = formatApplicationNumber(callId, consecutive);
+        }
+
+        return number;
+    }
+
+    private static String formatApplicationNumber(Long callId, long consecutive) {
+
+        return String.format("POS-%d-%04d", callId, consecutive);
     }
 
     private ApplicationResponseDTO mapToDTO(
@@ -548,7 +589,7 @@ public class ApplicationServiceImpl implements IApplicationService {
     private Integer waitlistPosition(Application application) {
 
         Integer position = application.getDrawPosition();
-        int slots = application.getCall().getAvailableSlots();
+        int slots = application.getCall().getTotalSlots();
 
         return position != null && position > slots
                 ? position - slots
@@ -574,6 +615,11 @@ public class ApplicationServiceImpl implements IApplicationService {
 
                 application.getCall().getStartDate(),
                 application.getCall().getEndDate(),
+                CallServiceImpl.deriveStatus(
+                        application.getCall().isClosedManually(),
+                        application.getCall().getStartDate(),
+                        application.getCall().getEndDate()
+                ).name(),
 
                 application.getStatus().name(),
                 application.getCreatedAt(),

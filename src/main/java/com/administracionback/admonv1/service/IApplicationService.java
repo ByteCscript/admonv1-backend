@@ -19,7 +19,7 @@ public interface IApplicationService {
     );
 
     ResponseEntity<ApiResponse<PageResponseDTO<ApplicationResponseDTO>>> getApplications(
-            ApplicationFilterDTO filters,
+            String email,
             int page,
             int size,
             String sortBy,

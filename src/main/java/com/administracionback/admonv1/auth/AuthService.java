@@ -11,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -22,6 +23,8 @@ public class AuthService {
     private final JwtService jwtService;
     private final UserRepository userRepository;
 
+    // readOnly: apartamento y torre son LAZY y se leen para la respuesta.
+    @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<LoginResponseDTO>> login(
             LoginRequestDTO request) {
 
@@ -46,13 +49,20 @@ public class AuthService {
                 .filter(authority -> authority.startsWith("ROLE_"))
                 .toList();
 
+        var apartment = user.getApartment();
+
         LoginResponseDTO response = new LoginResponseDTO(
                 token,
                 "Bearer",
                 3600,
                 user.getEmail(),
                 user.getName(),
-                roles
+                roles,
+                user.getId(),
+                apartment == null ? null : apartment.getNumber(),
+                apartment == null || apartment.getTower() == null
+                        ? null
+                        : apartment.getTower().getName()
         );
 
 

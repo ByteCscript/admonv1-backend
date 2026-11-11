@@ -1,6 +1,5 @@
 package com.administracionback.admonv1.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 
 /*
@@ -9,7 +8,7 @@ import java.time.LocalDateTime;
  * y dentro de /api/calls/{callId}/draw/results.
  */
 public record IntegrityHashDTO(
-        @JsonProperty("hash_value") String hashValue,
-        @JsonProperty("created_at") LocalDateTime createdAt
+        String hashValue,
+        LocalDateTime createdAt
 ) {
 }

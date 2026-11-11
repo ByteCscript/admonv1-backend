@@ -1,5 +1,7 @@
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -19,6 +21,16 @@ TEST_PASSWORD = os.getenv(
     "123456"
 )
 
+ADMIN_EMAIL = os.getenv(
+    "ADMIN_EMAIL",
+    "admin@test.com"
+)
+
+ADMIN_PASSWORD = os.getenv(
+    "ADMIN_PASSWORD",
+    "123456"
+)
+
 TIMEOUT = 10
 
 
@@ -32,6 +44,45 @@ def get_json(response: requests.Response):
     )
 
     return response.json()
+
+
+def create_open_call():
+    """
+    Crea, como administrador, una convocatoria vigente desde hoy
+    (zona America/Bogota) para que el test no dependa de datos semilla.
+    """
+    admin = requests.Session()
+
+    response = admin.post(
+        f"{BASE_URL}/api/auth/login",
+        json={
+            "email": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD
+        },
+        timeout=TIMEOUT
+    )
+
+    token = get_json(response)["data"]["token"]
+
+    admin.headers.update({
+        "Authorization": f"Bearer {token}"
+    })
+
+    today = datetime.now(ZoneInfo("America/Bogota")).date()
+
+    response = admin.post(
+        f"{BASE_URL}/api/calls",
+        json={
+            "title": f"Convocatoria API test {today.isoformat()}",
+            "description": "Creada automáticamente por api-tests",
+            "startDate": today.isoformat(),
+            "endDate": (today + timedelta(days=30)).isoformat(),
+            "totalSlots": 10
+        },
+        timeout=TIMEOUT
+    )
+
+    return get_json(response)["data"]
 
 
 def test_create_application_end_to_end():
@@ -73,13 +124,13 @@ def test_create_application_end_to_end():
 
     body = get_json(response)
 
-    calls = body["data"]
-
-    assert calls, "No existen convocatorias disponibles para el test"
+    calls = body["data"] or []
 
 
     # ============================================================
     # 3. BUSCAR UNA CONVOCATORIA EN LA QUE PUEDA POSTULARSE
+    #    (la BD arranca sin convocatorias: si no hay ninguna
+    #    disponible, el administrador crea una vigente)
     # ============================================================
 
     eligible_call = None
@@ -100,9 +151,12 @@ def test_create_application_end_to_end():
 
         eligibility = eligibility_body["data"]
 
-        if eligibility["canApply"]:
+        if eligibility["canApply"] and call.get("status") == "OPEN":
             eligible_call = call
             break
+
+    if eligible_call is None:
+        eligible_call = create_open_call()
 
     assert eligible_call is not None, (
         "El residente no tiene ninguna convocatoria disponible "
@@ -244,7 +298,7 @@ def test_create_application_end_to_end():
 
     assert application_id
     assert application["callId"] == call_id
-    assert application["status"] == "REGISTERED"
+    assert application["status"] == "PENDING_VALIDATION"
 
     assert len(document_ids) == 3
 
@@ -264,4 +318,4 @@ def test_create_application_end_to_end():
 
     assert application_detail["id"] == application_id
     assert application_detail["callId"] == call_id
-    assert application_detail["status"] == "REGISTERED"
+    assert application_detail["status"] == "PENDING_VALIDATION"
